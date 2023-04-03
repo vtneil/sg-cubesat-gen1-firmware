@@ -16,7 +16,6 @@
 #include "vnet_tools.h"
 #include "vnet_states.h"
 #include "vnet_sensors.h"
-#include "DallasTemperature.h"
 
 /* Programming Options */
 #define DEVICE_NUMBER 0
@@ -32,6 +31,7 @@
 #define PIN_ADC_CAM      PIN_A1
 #define PIN_ADC_SENSE    PIN_A2
 #define PIN_ADC_C_OUT    PIN_A3
+#define PIN_EXT_TEMP     PD4
 
 #define SerialGPS1 Serial1
 #define SerialLoRa Serial2
@@ -83,10 +83,9 @@ Peripherals_t sensors_list = {};
 Sensors_Environmental *env_sensors;
 Sensors_GPS *gps0;
 Sensors_GPS *gps1;
+Sensors_Environmental_DS18B20 *ext_sense;
 
-Data_t data = {
-        .counter = 1
-};
+Data_t data = {};
 String packet;
 
 volatile tim_cnt_t tim_cnt[FLAG_SET_CNT] = {{}};
@@ -165,8 +164,9 @@ void setup_handler() {
 
 void main_loop_handler() {
     /* Begin loop */
-    /* Every 1000 ms */
+    /* MAIN: Every 1000 ms */
     IF_FLAG_DO(flag[0][0], {
+        ++data.counter;
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 
         packet = build_string(free_memory(),
@@ -188,14 +188,16 @@ void main_loop_handler() {
 
         Serial.println(packet);
 
-        ++data.counter;
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
     })
 
+    /* SENSE: Every 50 ms */
     IF_FLAG_DO(flag[0][1], {
         data.pht = env_sensors->read_PHT();
         data.pos0 = gps0->read_position();
         data.pos1 = gps1->read_position();
+        data.ext_temperature = ext_sense->read_temperature();
+        data.battery_v = analogRead(PIN_ADC_BATT);
     })
     /* End loop */
 }
@@ -221,10 +223,10 @@ void dfu_mode_handler() {
 void init_peripherals() {
     Serial.println("Peripheral init...");
     /* Begin Pins */
-    DDRH |= (1 << PINH2) | (1 << PINH3);        // PH2, PH3 Output   for LoRa Mode
-    PORTH &= ~((1 << PINH2) | (1 << PINH3));    // PH2, PH3 Set Low  for LoRa Mode
+    DDRH |= (1 << PH2) | (1 << PH3);        // PH2, PH3 Output   for LoRa Mode
+    PORTH &= ~((1 << PH2) | (1 << PH3));    // PH2, PH3 Set Low  for LoRa Mode
 
-    DDRD &= ~(1 << PIND4);                      // PD4 for Temperature Sensor
+    DDRD &= ~(1 << PIN_EXT_TEMP);                      // PD4 for Temperature Sensor
 
     pinMode(PIN_LED, OUTPUT);
     pinMode(PIN_BUZZER, OUTPUT);
@@ -236,6 +238,7 @@ void init_peripherals() {
     env_sensors = new Sensors_Environmental(&sensors_list);
     gps0 = new Sensors_GPS_SparkFun(&sensors_list);
     gps1 = new Sensors_GPS_Serial(&sensors_list, &SerialGPS1);
+    ext_sense = new Sensors_Environmental_DS18B20(&sensors_list);
     /* End Sensors */
 
     /* Begin Interface */

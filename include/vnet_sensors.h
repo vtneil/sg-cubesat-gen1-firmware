@@ -18,6 +18,9 @@
 #include "Adafruit_BNO055.h"
 #include "ICM_20948.h"
 #include "PMS.h"
+#include "util/OneWire_direct_gpio.h"
+#include "OneWire.h"
+#include "DallasTemperature.h"
 
 /* Definitions */
 #define MSLP_HPA (1013.25)
@@ -499,6 +502,77 @@ public:
         if (icm20948->dataReady()) {
             icm20948->getAGMT();
         }
+    }
+};
+
+namespace impl {
+    void setupPD4() {
+        DDRD &= ~(1 << PD4);
+    }
+
+    uint8_t readPD4() {
+        return (PIND & (1 << PD4)) >> PD4;
+    }
+
+#undef DIRECT_MODE_INPUT
+#define DIRECT_MODE_INPUT() impl::setupPD4()
+#undef DIRECT_MODE_OUTPUT
+#define DIRECT_MODE_OUTPUT() impl::setupPD4()
+#undef DIRECT_WRITE_LOW
+#define DIRECT_WRITE_LOW() (PORTD &= ~(1 << PD4))
+#undef DIRECT_READ
+#define DIRECT_READ() impl::readPD4()
+
+    class OneWirePD4 : public OneWire {
+    public:
+        OneWirePD4() : OneWire(0) {}
+
+        void write_bit(uint8_t v) {
+            PAUSE_INTERRUPT(
+                    if (v & 1) {
+                        DIRECT_MODE_OUTPUT(); // make pin an output, do first since it
+                        DIRECT_WRITE_LOW();   // will allow change to input while in output
+                        delayMicroseconds(10);
+                        DIRECT_MODE_INPUT(); // now input
+                        delayMicroseconds(55);
+                    } else {
+                        DIRECT_MODE_OUTPUT();
+                        DIRECT_WRITE_LOW();
+                        delayMicroseconds(65);
+                        DIRECT_MODE_INPUT();
+                        delayMicroseconds(5);
+                    }
+            )
+        }
+
+        uint8_t read_bit() {
+            uint8_t r;
+            PAUSE_INTERRUPT(
+                    DIRECT_MODE_OUTPUT();
+                    DIRECT_WRITE_LOW();
+                    delayMicroseconds(3);
+                    DIRECT_MODE_INPUT(); // let pin float, pull up will raise
+                    delayMicroseconds(10);
+                    r = impl::readPD4();
+            )
+            delayMicroseconds(53);
+            return r;
+        }
+    };
+}
+
+
+class Sensors_Environmental_DS18B20 : protected impl::Sensors_Global {
+private:
+    impl::OneWirePD4 one_wire{};
+    DallasTemperature sensor{&one_wire};
+public:
+    explicit Sensors_Environmental_DS18B20(Peripherals_t *sensors_list) :
+            Sensors_Global(sensors_list) {}
+
+    float read_temperature() {
+        sensor.requestTemperatures();
+        return sensor.getTempCByIndex(0);
     }
 };
 
