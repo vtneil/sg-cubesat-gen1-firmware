@@ -1,10 +1,10 @@
 #ifndef PINTO_V1_FIRMWARE_VNET_DEFINITIONS_H
 #define PINTO_V1_FIRMWARE_VNET_DEFINITIONS_H
 
-#define UART0_BAUD (115200)
-#define UART0_PARITY SERIAL_8N1
+#define UART0_BAUD        (9600)
+#define UART0_PARITY      SERIAL_8N1
 #define UART0_BUFFER_SIZE (64)
-#define CONFIG_SIZE (256)
+#define CONFIG_SIZE       (256)
 
 #if defined(ARDUINO_TEENSY40)
 #define EEPROM_CFG_START (1080-CONFIG_SIZE)
@@ -171,19 +171,19 @@
 #define LORA_915_CH32 (931000000)
 
 /* Sensors Macros and Addresses */
-#define ADDR_BME280 (0x76)
-#define ADDR_CCS811 (0x5A)
-#define ADDR_BNO085 (0x4A)
-#define ADDR_BNO055 (0x28)
+#define ADDR_BME280   (0x76)
+#define ADDR_CCS811   (0x5A)
+#define ADDR_BNO085   (0x4A)
+#define ADDR_BNO055   (0x28)
 #define ADDR_ICM20948 (0x68)
 
 /* Other Macros */
 #define WEAK __attribute__((weak))
 #define PAUSE_INTERRUPT(BLOCK) cli(); BLOCK sei();
-#define CMP_STATE(BUF, TARGET) ((BUF[0]<<1)+BUF[1]==TARGET)
+#define BYTES_2(_B1, _B0) ((_B1<<1)+_B0)
 #define IF_FLAG_DO(FLAG, BLOCK) if(FLAG){BLOCK FLAG=false;}
 #define INCREMENT_AND_COMPARE(TIM_CNT, FLAG, INTERVAL) if(++TIM_CNT==INTERVAL){FLAG=true;TIM_CNT=0;}
-#define DO_LOOP(ITERATION, CMD) for(size_t _i = 0; _i < ITERATION; ++_i) CMD
+#define DO_LOOP(ITERATION, CMD) for(size_t _i=0;_i<ITERATION;++_i) CMD
 
 typedef enum {
     SYS_DISABLED = 0,
@@ -225,6 +225,7 @@ typedef uint16_t tim_cnt_t[8];
 typedef bool flag_t[8];
 
 typedef void (*HandlerFunc_Arg_t)(void *arg);
+
 typedef void (*HandlerFunc_t)();
 
 template<typename T>

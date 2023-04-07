@@ -3,21 +3,19 @@
 
 #include "vnet_definitions.h"
 
-enum StateInput : uint16_t {
-    MAIN_LOOP = ('0' << 1) + '1',
-    DFU_LOOP = ('F' << 1) + 'E'
-};
-
-constexpr uint8_t STATE_MAIN_LOOP = StateInput::MAIN_LOOP;
-constexpr uint8_t STATE_DFU_LOOP = StateInput::DFU_LOOP;
-
 class State {
+public:
+    static constexpr uint8_t FORCE_RESET = BYTES_2('0', '0');
+    static constexpr uint8_t MAIN_LOOP = BYTES_2('0', '1');
+    static constexpr uint8_t DFU_LOOP = BYTES_2('F', 'E');
+
 protected:
     bool m_has_arg = false;
     State *m_prev;
     State *m_next;
     StateID_e m_id;
     HandlerFunc_Arg_t m_func;
+
 public:
     State(HandlerFunc_t func, StateID_e id, State *prev = nullptr, State *next = nullptr) :
             State((HandlerFunc_Arg_t) func, id, prev, next) {
@@ -64,11 +62,15 @@ public:
 
 class OSState : public State {
 public:
-    OSState(HandlerFunc_t func, StateID_e id, State *prev = nullptr, State *next = nullptr) :
-            OSState((HandlerFunc_Arg_t) func, id, prev, next) {}
+    explicit OSState(HandlerFunc_t func,
+                     StateID_e id = SYS_DISABLED,
+                     State *prev = nullptr,
+                     State *next = nullptr) : State(func, id, prev, next) {}
 
-    OSState(HandlerFunc_Arg_t func, StateID_e id, State *prev = nullptr, State *next = nullptr) :
-            State(func, id, prev, next) {}
+    explicit OSState(HandlerFunc_Arg_t func,
+                     StateID_e id = SYS_DISABLED,
+                     State *prev = nullptr,
+                     State *next = nullptr) : State(func, id, prev, next) {}
 };
 
 #endif //PINTO_V1_FIRMWARE_VNET_STATES_H

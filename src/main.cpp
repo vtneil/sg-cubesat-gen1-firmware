@@ -19,6 +19,7 @@
 
 /* Programming Options */
 #define DEVICE_NUMBER 0
+#define LORA_CHANNEL 0
 //#define DEVICE_SETUP_MODE
 #define DEVICE_DEBUG_MODE
 
@@ -59,19 +60,23 @@ typedef struct {
 /* Functions Declarations */
 extern inline void setup_wdt();
 
-extern void init_peripherals();
+extern inline void init_peripherals();
 
-extern void timer_increment();
+extern inline void timer_increment();
 
 extern inline void user_uart_rx();
 
-extern void dfu_mode_handler();
+extern void lora_cfg_handler();
 
 extern void boot_handler();
 
 extern void setup_handler();
 
 extern void main_loop_handler();
+
+extern inline void sig_trap();
+
+extern inline void reset_device();
 
 /* Device Configurations and Parameters */
 EEPROM_Config_t device_params = {
@@ -80,6 +85,7 @@ EEPROM_Config_t device_params = {
 
 /* Global Variables */
 Peripherals_t sensors_list = {};
+LoRa_E32 *lora;
 Sensors_Environmental *env_sensors;
 Sensors_GPS *gps0;
 Sensors_GPS *gps1;
@@ -95,10 +101,12 @@ uint8_t uart0_rx_buf[UART0_BUFFER_SIZE];
 uint8_t uart0_rx_ptr = 0;
 
 State *state = nullptr;
+
 State boot_state = OSState(boot_handler, StateID_e::SYS_BOOT_UP);
 State setup_state = OSState(setup_handler, StateID_e::SYS_SETUP);
 State main_state = OSState(main_loop_handler, StateID_e::SYS_MAIN);
-State dfu_state = OSState(dfu_mode_handler, StateID_e::SYS_DFU);
+State lora_cfg_state = OSState(lora_cfg_handler, StateID_e::SYS_DFU);
+State sink_state = OSState(sig_trap);
 
 State *setup_states_list[] = {&boot_state, &setup_state};
 
@@ -116,12 +124,12 @@ void loop() {
     /* End Run current state */
 
     /* Begin Poll for Serial */
-    user_uart_rx();
+    if (state != &lora_cfg_state)
+        user_uart_rx();
     /* End Poll for Serial */
 }
 
 /* Functions Definitions */
-
 void user_uart_rx() {
     IF_FLAG_DO(flag[1][0], {
         if (Serial.available()) {
@@ -139,10 +147,17 @@ void user_uart_rx() {
             }
 
             /* Compare buffer, then change mode */
-            if (CMP_STATE(uart0_rx_buf, STATE_DFU_LOOP)) {
-                state = &dfu_state;
-            } else if (CMP_STATE(uart0_rx_buf, STATE_MAIN_LOOP)) {
-                state = &main_state;
+            switch (BYTES_2(uart0_rx_buf[0], uart0_rx_buf[1])) {
+                case State::MAIN_LOOP:
+                    state = &main_state;
+                    break;
+                case State::DFU_LOOP:
+                    state = &lora_cfg_state;
+                    break;
+                case State::FORCE_RESET:
+                    reset_device();
+                default:
+                    break;
             }
         }
     })
@@ -169,9 +184,9 @@ void main_loop_handler() {
         ++data.counter;
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 
-        packet = build_string(free_memory(),
-                              data.device_name,
+        packet = build_string(data.device_name,
                               data.counter,
+                              free_memory(),
                               String(data.pos0.latitude, 6),
                               String(data.pos0.longitude, 6),
                               data.pos0.altitude,
@@ -183,8 +198,7 @@ void main_loop_handler() {
                               data.pht.humidity,
                               data.pht.pressure,
                               data.ext_temperature,
-                              data.battery_v
-        );
+                              data.battery_v);
 
         Serial.println(packet);
 
@@ -205,7 +219,6 @@ void main_loop_handler() {
 void boot_handler() {
     /* Begin Serial USB */
     Serial.begin(UART0_BAUD, UART0_PARITY);
-    Serial.println("Boot init...");
     /* End Serial USB */
 
     /* Begin WDT */
@@ -215,34 +228,51 @@ void boot_handler() {
     data.device_name = String("CGSAT") + String(DEVICE_NUMBER);
 }
 
-void dfu_mode_handler() {
-    Serial.println("LoRa Setup Mode");
+void lora_cfg_handler() {
+    lora->begin_cfg();
+
+    lora->cmd_get_params();
+    lora->parse_params();
+
+    Serial.println("=== LoRa Begin Configuration Mode ===");
+
+    lora->cmd_set_params(0,
+                         LoRa_E32::LORA_BAUD_115200,
+                         LoRa_E32::LORA_8N1,
+                         LoRa_E32::LORA_RATE_19200,
+                         LORA_CHANNEL, true);
+    lora->parse_params();
+
+    Serial.println("==== LoRa End Configuration Mode ====");
+
+    delay(10);
+
+    sig_trap();
 }
 
 /* End Handler Functions Definitions */
 void init_peripherals() {
-    Serial.println("Peripheral init...");
     /* Begin Pins */
-    DDRH |= (1 << PH2) | (1 << PH3);        // PH2, PH3 Output   for LoRa Mode
-    PORTH &= ~((1 << PH2) | (1 << PH3));    // PH2, PH3 Set Low  for LoRa Mode
-
-    DDRD &= ~(1 << PIN_EXT_TEMP);                      // PD4 for Temperature Sensor
-
     pinMode(PIN_LED, OUTPUT);
     pinMode(PIN_BUZZER, OUTPUT);
     pinMode(PIN_WDT_Activate, OUTPUT);
     pinMode(PIN_WDT_PWM, OUTPUT);
+    pinMode(PIN_ADC_BATT, INPUT);
     /* End Pins */
+
+    /* Begin LoRa */
+    lora = new LoRa_E32(&SerialLoRa);
+    /* End LoRa */
 
     /* Begin Sensors */
     env_sensors = new Sensors_Environmental(&sensors_list);
     gps0 = new Sensors_GPS_SparkFun(&sensors_list);
     gps1 = new Sensors_GPS_Serial(&sensors_list, &SerialGPS1);
-    ext_sense = new Sensors_Environmental_DS18B20(&sensors_list);
+    ext_sense = new Sensors_Environmental_DS18B20(&sensors_list, PIN_EXT_TEMP);
     /* End Sensors */
 
     /* Begin Interface */
-    SerialLoRa.begin(9600);
+    lora->begin_normal(9600U);
     /* End Interface */
 }
 
@@ -288,4 +318,15 @@ ISR(TIMER1_COMPA_vect) {
         tim_cnt[1][7] = 0;
     }
 }
+
 /* End Interrupt Service Routine Definitions */
+
+void sig_trap() {
+    while (true);
+}
+
+void reset_device() {
+    wdt_disable();
+    wdt_enable(WDTO_15MS);
+    PAUSE_INTERRUPT(sig_trap();)
+}
