@@ -1,7 +1,13 @@
 #ifndef PINTO_V1_FIRMWARE_VNET_DEFINITIONS_H
 #define PINTO_V1_FIRMWARE_VNET_DEFINITIONS_H
 
-#define UART0_BAUD        (9600)
+#define USB_VENDOR_ID        0x239A
+#define USB_PRODUCT_ID       0x8023
+#define USB_MANUFACTURER_STR "Adafruit Industries"
+#define USB_PRODUCT_STR      "CG CubeSat Main Board"
+#define USB_SERIAL_NUM_STR   "SPACEAC0001"
+
+#define UART0_BAUD        (115200)
 #define UART0_PARITY      SERIAL_8N1
 #define UART0_BUFFER_SIZE (64)
 #define CONFIG_SIZE       (256)
@@ -88,6 +94,10 @@
 #define UART3_TXD PIN_D14
 
 /* Millis Standardized Macros */
+#define MILLIS_10   (10)
+#define MILLIS_20   (20)
+#define MILLIS_30   (30)
+#define MILLIS_40   (40)
 #define MILLIS_50   (50)
 #define MILLIS_100  (100)
 #define MILLIS_200  (200)

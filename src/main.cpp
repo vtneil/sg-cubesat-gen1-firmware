@@ -15,13 +15,21 @@
 #include "vnet_definitions.h"
 #include "vnet_tools.h"
 #include "vnet_states.h"
+
+#define ONEWIRE_CUSTOM_PIN
+
 #include "vnet_sensors.h"
 
-/* Programming Options */
+/* Device Parameters */
 #define DEVICE_NUMBER 0
 #define LORA_CHANNEL 0
+#define FILENAME "cg"
+
+/* Programming Options */
 //#define DEVICE_SETUP_MODE
 #define DEVICE_DEBUG_MODE
+//#define ENABLE_HW_RESET
+#define OPTIMIZE_GPS_COMPILE
 
 /* Definitions */
 #define PIN_LED          PIN_D10
@@ -53,6 +61,7 @@ typedef struct {
     Sensors_Data_GPS_Position_t pos0;
     Sensors_Data_GPS_Position_t pos1;
     Sensors_Data_PHT_t pht;
+    Sensors_Data_PHT_t pht_ext;
     float ext_temperature;
     float battery_v;
 } Data_t;
@@ -68,6 +77,8 @@ extern inline void user_uart_rx();
 
 extern void lora_cfg_handler();
 
+extern void sd_read();
+
 extern void boot_handler();
 
 extern void setup_handler();
@@ -80,16 +91,24 @@ extern inline void reset_device();
 
 /* Device Configurations and Parameters */
 EEPROM_Config_t device_params = {
-        .loop_interval = MILLIS_1S
+        .loop_interval = MILLIS_250
 };
 
 /* Global Variables */
 Peripherals_t sensors_list = {};
 LoRa_E32 *lora;
 Sensors_Environmental *env_sensors;
+Sensors_Environmental *env_sensors_ext;
+#if defined(OPTIMIZE_GPS_COMPILE)
+Sensors_GPS_SparkFun *gps0;
+Sensors_GPS_Serial *gps1;
+#else
 Sensors_GPS *gps0;
 Sensors_GPS *gps1;
+#endif
 Sensors_Environmental_DS18B20 *ext_sense;
+Storage_SD *sd;
+Screen_OLED *screen;
 
 Data_t data = {};
 String packet;
@@ -106,6 +125,7 @@ State boot_state = OSState(boot_handler, StateID_e::SYS_BOOT_UP);
 State setup_state = OSState(setup_handler, StateID_e::SYS_SETUP);
 State main_state = OSState(main_loop_handler, StateID_e::SYS_MAIN);
 State lora_cfg_state = OSState(lora_cfg_handler, StateID_e::SYS_DFU);
+State sd_read_state = OSState(sd_read, StateID_e::SYS_DFU);
 State sink_state = OSState(sig_trap);
 
 State *setup_states_list[] = {&boot_state, &setup_state};
@@ -124,7 +144,7 @@ void loop() {
     /* End Run current state */
 
     /* Begin Poll for Serial */
-    if (state != &lora_cfg_state)
+    if (state == &main_state)
         user_uart_rx();
     /* End Poll for Serial */
 }
@@ -154,8 +174,12 @@ void user_uart_rx() {
                 case State::DFU_LOOP:
                     state = &lora_cfg_state;
                     break;
+                case State::SD_READ:
+                    state = &sd_read_state;
+                    break;
                 case State::FORCE_RESET:
                     reset_device();
+                    break;
                 default:
                     break;
             }
@@ -170,22 +194,30 @@ void setup_handler() {
     /* End void setup */
 
     /* Begin init Hardware Auto-Reset */
+#if defined(ENABLE_HW_RESET)
     analogWrite(PIN_WDT_PWM, 1 << 7);
     digitalWrite(PIN_WDT_Activate, 0);
     delay(100);
     digitalWrite(PIN_WDT_Activate, 1);
+#endif
     /* End init Hardware Auto-Reset */
+
+    /* Begin WDT */
+    setup_wdt();
+    /* End WDT */
 }
 
 void main_loop_handler() {
     /* Begin loop */
     /* MAIN: Every 1000 ms */
+    static uint32_t time_now = millis();
     IF_FLAG_DO(flag[0][0], {
         ++data.counter;
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
 
         packet = build_string(data.device_name,
                               data.counter,
+                              millis() - time_now,
                               free_memory(),
                               String(data.pos0.latitude, 6),
                               String(data.pos0.longitude, 6),
@@ -197,10 +229,17 @@ void main_loop_handler() {
                               data.pht.temperature,
                               data.pht.humidity,
                               data.pht.pressure,
+                              data.pht_ext.altitude,
+                              data.pht_ext.temperature,
+                              data.pht_ext.humidity,
+                              data.pht_ext.pressure,
                               data.ext_temperature,
                               data.battery_v);
+        time_now = millis();
 
-        Serial.println(packet);
+        LOG(Serial.println(packet));
+        SerialLoRa.println(packet);
+        sd->file.println(packet);
 
         digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
     })
@@ -208,10 +247,15 @@ void main_loop_handler() {
     /* SENSE: Every 50 ms */
     IF_FLAG_DO(flag[0][1], {
         data.pht = env_sensors->read_PHT();
+        data.pht_ext = env_sensors_ext->read_PHT();
         data.pos0 = gps0->read_position();
         data.pos1 = gps1->read_position();
+        data.battery_v = (float) (0.0051 * 4 * analogRead(PIN_ADC_BATT));
+    })
+
+    /* SENSE Dallas: Every 2000 ms */
+    IF_FLAG_DO(flag[0][2], {
         data.ext_temperature = ext_sense->read_temperature();
-        data.battery_v = analogRead(PIN_ADC_BATT);
     })
     /* End loop */
 }
@@ -221,17 +265,16 @@ void boot_handler() {
     Serial.begin(UART0_BAUD, UART0_PARITY);
     /* End Serial USB */
 
-    /* Begin WDT */
-    setup_wdt();
-    /* End WDT */
-
-    data.device_name = String("CGSAT") + String(DEVICE_NUMBER);
+    data.device_name = String("CG") + String(DEVICE_NUMBER);
 }
 
 void lora_cfg_handler() {
     lora->begin_cfg();
 
     lora->cmd_get_params();
+
+    Serial.println("==== LoRa Current Configuration  ====");
+
     lora->parse_params();
 
     Serial.println("=== LoRa Begin Configuration Mode ===");
@@ -239,15 +282,47 @@ void lora_cfg_handler() {
     lora->cmd_set_params(0,
                          LoRa_E32::LORA_BAUD_115200,
                          LoRa_E32::LORA_8N1,
-                         LoRa_E32::LORA_RATE_19200,
-                         LORA_CHANNEL, true);
+                         LoRa_E32::LORA_RATE_9600,
+                         15, true);
     lora->parse_params();
 
     Serial.println("==== LoRa End Configuration Mode ====");
 
-    delay(10);
-
     sig_trap();
+}
+
+void sd_read() {
+    static String filename;
+    static uint8_t mode = 0;
+
+    filename = "";
+    while (!Serial.available());
+    delay(100);
+    while (Serial.available()) filename += (char) Serial.read();
+    filename.trim();
+
+    if (filename == "quit" || filename == "exit") {
+        sd->open();
+        state = &main_state;
+        return;
+    } else if (filename == "delete") {
+        mode = 1;
+    } else {
+        mode = 0;
+    }
+
+    sd->close();
+    sd->list_files();
+
+    while (!Serial.available());
+    delay(100);
+    filename = "";
+    while (Serial.available()) filename += (char) Serial.read();
+    filename.trim();
+    if (mode == 0)
+        sd->read_content(filename);
+    else if (mode == 1)
+        sd->delete_file(filename);
 }
 
 /* End Handler Functions Definitions */
@@ -255,8 +330,12 @@ void init_peripherals() {
     /* Begin Pins */
     pinMode(PIN_LED, OUTPUT);
     pinMode(PIN_BUZZER, OUTPUT);
+
+#if defined(ENABLE_HW_RESET)
     pinMode(PIN_WDT_Activate, OUTPUT);
     pinMode(PIN_WDT_PWM, OUTPUT);
+#endif
+
     pinMode(PIN_ADC_BATT, INPUT);
     /* End Pins */
 
@@ -264,15 +343,24 @@ void init_peripherals() {
     lora = new LoRa_E32(&SerialLoRa);
     /* End LoRa */
 
+    /* Begin SD */
+    sd = new Storage_SD(FILENAME);
+    /* End SD */
+
     /* Begin Sensors */
     env_sensors = new Sensors_Environmental(&sensors_list);
+    env_sensors_ext = new Sensors_Environmental(&sensors_list, 0x77);
     gps0 = new Sensors_GPS_SparkFun(&sensors_list);
     gps1 = new Sensors_GPS_Serial(&sensors_list, &SerialGPS1);
-    ext_sense = new Sensors_Environmental_DS18B20(&sensors_list, PIN_EXT_TEMP);
+    ext_sense = new Sensors_Environmental_DS18B20(&sensors_list);
     /* End Sensors */
 
+    /* Begin Screen */
+    screen = new Screen_OLED();
+    /* End Screen */
+
     /* Begin Interface */
-    lora->begin_normal(9600U);
+    lora->begin_normal(115200U);
     /* End Interface */
 }
 
@@ -280,7 +368,10 @@ void timer_increment() {
     /* Begin User Timers and Flags */
     /* Main Loop Timer */
     INCREMENT_AND_COMPARE(tim_cnt[0][0], flag[0][0], device_params.loop_interval)
+    /* Sense Timer */
     INCREMENT_AND_COMPARE(tim_cnt[0][1], flag[0][1], MILLIS_50)
+    /* Dallas Timer */
+    INCREMENT_AND_COMPARE(tim_cnt[0][2], flag[0][2], MILLIS_1S)
     /* End User Timers and Flags */
 
     /* Begin Reserved Timers and Flags */
@@ -322,6 +413,7 @@ ISR(TIMER1_COMPA_vect) {
 /* End Interrupt Service Routine Definitions */
 
 void sig_trap() {
+    delay(20);
     while (true);
 }
 

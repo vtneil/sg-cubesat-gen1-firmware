@@ -5,7 +5,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <SD.h>
+#include <SdFat.h>
 #include "vnet_definitions.h"
 #include "vnet_tools.h"
 /* Sensors Includes */
@@ -18,9 +18,14 @@
 #include "Adafruit_BNO055.h"
 #include "ICM_20948.h"
 #include "PMS.h"
-#include "util/OneWire_direct_gpio.h"
-#include "OneWire.h"
-#include "DallasTemperature.h"
+#include "modified/OneWire/util/OneWire_direct_gpio.h"
+#include "modified/OneWire/OneWire.h"
+#include "modified/DallasTemperature/DallasTemperature.h"
+#include "Adafruit_GFX.h"
+#include "Adafruit_SSD1306.h"
+/* USB Interface */
+//#include "Adafruit_TinyUSB.h"
+//#include "arduino/msc/Adafruit_USBD_MSC.h"
 
 /* Definitions */
 #define MSLP_HPA (1013.25)
@@ -246,9 +251,9 @@ public:
     Sensors_Data_GPS_Position_t &read_position() override {
         if (list->gps_SparkFun && (millis() - last_millis > MILLIS_500)) {
             *pos = {
-                    ((double) gps_SparkFun->getLatitude()) * 1E-7,
-                    ((double) gps_SparkFun->getLongitude()) * 1E-7,
-                    ((double) gps_SparkFun->getAltitude()) * 1E-3
+                    ((double) gps_SparkFun->getLatitude(250)) * 1E-7,
+                    ((double) gps_SparkFun->getLongitude(250)) * 1E-7,
+                    ((double) gps_SparkFun->getAltitude(250)) * 1E-3
             };
             last_millis = millis();
         }
@@ -505,75 +510,16 @@ public:
     }
 };
 
-namespace impl {
-    void setupPD4_out() {
-        DDRD |= (1 << PD4);
-    }
-
-    void setupPD4_in() {
-        DDRD &= ~(1 << PD4);
-    }
-
-    uint8_t readPD4() {
-        return (PIND & (1 << PD4)) >> PD4;
-    }
-
-#undef DIRECT_MODE_INPUT
-#define DIRECT_MODE_INPUT() setupPD4_in()
-#undef DIRECT_MODE_OUTPUT
-#define DIRECT_MODE_OUTPUT() setupPD4_out()
-#undef DIRECT_WRITE_LOW
-#define DIRECT_WRITE_LOW() (PORTD &= ~(1 << PD4))
-#undef DIRECT_READ
-#define DIRECT_READ() readPD4()
-
-    class OneWirePD4 : public OneWire {
-    public:
-        OneWirePD4() : OneWire(0) {}
-
-        void write_bit(uint8_t v) {
-            PAUSE_INTERRUPT(
-                    if (v & 1) {
-                        DIRECT_MODE_OUTPUT();
-                        DIRECT_WRITE_LOW();
-                        delayMicroseconds(10);
-                        DIRECT_MODE_INPUT();
-                        delayMicroseconds(55);
-                    } else {
-                        DIRECT_MODE_OUTPUT();
-                        DIRECT_WRITE_LOW();
-                        delayMicroseconds(65);
-                        DIRECT_MODE_INPUT();
-                        delayMicroseconds(5);
-                    }
-            )
-        }
-
-        uint8_t read_bit() {
-            uint8_t r;
-            PAUSE_INTERRUPT(
-                    DIRECT_MODE_OUTPUT();
-                    DIRECT_WRITE_LOW();
-                    delayMicroseconds(3);
-                    DIRECT_MODE_INPUT(); // let pin float, pull up will raise
-                    delayMicroseconds(10);
-                    r = readPD4();
-            )
-            delayMicroseconds(53);
-            return r;
-        }
-    };
-}
-
 
 class Sensors_Environmental_DS18B20 : protected impl::Sensors_Global {
 private:
-    impl::OneWirePD4 one_wire{};
-    DallasTemperature sensor{&one_wire};
+    OneWire one_wire_int{0};
+    DallasTemperature sensor;
 public:
-    explicit Sensors_Environmental_DS18B20(Peripherals_t *sensors_list, uint8_t pin_ext_tmp) :
+    explicit Sensors_Environmental_DS18B20(Peripherals_t *sensors_list) :
             Sensors_Global(sensors_list) {
-        DDRD &= ~(1 << pin_ext_tmp);
+        sensor.setOneWire(&one_wire_int);
+        sensor.begin();
     }
 
     float read_temperature() {
@@ -636,6 +582,8 @@ public:
 
     void begin_cfg() const {
         PORTH |= (1 << pin_M0) | (1 << pin_M1);     // Set M0 = 1 ; M1 = 1 (Sleep Mode)
+
+        delay(100);
 
         SerialLoRa->end();
         SerialLoRa->begin(baud_cfg, SERIAL_8N1);
@@ -735,7 +683,7 @@ public:
                 break;
         }
 
-        Serial.print("FIELD 4    ");
+        Serial.print("Channel    ");
         Serial.println(config[4], 16);
 
         Serial.print("FIELD 5    ");
@@ -789,6 +737,94 @@ public:
         SerialLoRa->write(0xc4);
         SerialLoRa->write(0xc4);
         SerialLoRa->write(0xc4);
+    }
+};
+
+class Storage_SD {
+private:
+    SdFat _sd;
+    String _save_filename;
+
+public:
+    File file;
+
+public:
+    explicit Storage_SD(String &filename) {
+        _sd.begin(53);
+        next_filename(filename);
+        open();
+    }
+
+    explicit Storage_SD(const char *filename) {
+        _sd.begin(53);
+        String _filename_str = String(filename);
+        next_filename(_filename_str);
+        open();
+    }
+
+    void next_filename(String &filename) {
+        uint16_t file_no = 0;
+        do { _save_filename = filename + "_" + file_no++ + ".csv"; } while (_sd.exists(_save_filename));
+    }
+
+    void list_files() {
+        File root = _sd.open("/");
+        char tmp[256];
+        while (true) {
+            File entry = root.openNextFile();
+            if (!entry) break;
+            memset(tmp, 0, sizeof(tmp));
+            entry.getName(tmp, sizeof(tmp));
+            Serial.print(tmp);
+            Serial.print("\t");
+            Serial.println((uint32_t) entry.size());
+            entry.close();
+        }
+    }
+
+    void read_content(String &filename) {
+        File _file = _sd.open(filename, FILE_READ);
+        if (!_file) return;
+        while (_file.available()) Serial.write(_file.read());
+        _file.close();
+    }
+
+    void delete_file(String &filename) {
+        File _file = _sd.open(filename, FILE_READ);
+        if (!_file) return;
+        _file.remove();
+    }
+
+    void open() {
+        file = _sd.open(_save_filename, FILE_WRITE);
+        file.seek(EOF);
+    }
+
+    void flush() {
+        file.flush();
+    }
+
+    void close() {
+        file.close();
+    }
+};
+
+class USB_Device {
+};
+
+class Screen_OLED {
+private:
+    TwoWire *wire = &Wire;
+    Adafruit_SSD1306 *display = nullptr;
+    bool status = false;
+public:
+    explicit Screen_OLED(uint8_t w = 128, uint8_t h = 64) {
+        display = new Adafruit_SSD1306(w, h, wire, -1);
+        status = display->begin(SSD1306_SWITCHCAPVCC, 0x3D);
+        if (!status)
+            delete display;
+
+        display->display();
     }
 };
 
