@@ -261,6 +261,9 @@ void main_loop_handler() {
 }
 
 void boot_handler() {
+    /* Delay (Wait for Uploading) */
+    delay(5000);
+
     /* Begin Serial USB */
     Serial.begin(UART0_BAUD, UART0_PARITY);
     /* End Serial USB */
@@ -275,7 +278,7 @@ void lora_cfg_handler() {
 
     Serial.println("==== LoRa Current Configuration  ====");
 
-    lora->parse_params();
+    lora->print_params();
 
     Serial.println("=== LoRa Begin Configuration Mode ===");
 
@@ -283,8 +286,12 @@ void lora_cfg_handler() {
                          LoRa_E32::LORA_BAUD_115200,
                          LoRa_E32::LORA_8N1,
                          LoRa_E32::LORA_RATE_9600,
-                         15, true);
-    lora->parse_params();
+                         15, LoRa_E32::LORA_TX_MAX,
+                         false, true);
+
+    lora->cmd_write_params();
+
+    lora->print_params();
 
     Serial.println("==== LoRa End Configuration Mode ====");
 
@@ -331,16 +338,11 @@ void init_peripherals() {
     pinMode(PIN_LED, OUTPUT);
     pinMode(PIN_BUZZER, OUTPUT);
 
-#if defined(ENABLE_HW_RESET)
-    pinMode(PIN_WDT_Activate, OUTPUT);
-    pinMode(PIN_WDT_PWM, OUTPUT);
-#endif
-
     pinMode(PIN_ADC_BATT, INPUT);
     /* End Pins */
 
     /* Begin LoRa */
-    lora = new LoRa_E32(&SerialLoRa);
+    lora = new LoRa_E32(&SerialLoRa, 115200U, DDRH, DDRH, PORTH, PORTH, PH2, PH3);
     /* End LoRa */
 
     /* Begin SD */
@@ -362,6 +364,11 @@ void init_peripherals() {
     /* Begin Interface */
     lora->begin_normal(115200U);
     /* End Interface */
+
+#if defined(ENABLE_HW_RESET)
+    pinMode(PIN_WDT_Activate, OUTPUT);
+    pinMode(PIN_WDT_PWM, OUTPUT);
+#endif
 }
 
 void timer_increment() {
