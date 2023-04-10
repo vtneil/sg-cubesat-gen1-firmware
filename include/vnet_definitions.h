@@ -108,6 +108,7 @@
 #define MILLIS_1S   (1000)
 #define MILLIS_2S   (2000)
 #define MILLIS_2_5S (2500)
+#define MILLIS_3S   (3000)
 #define MILLIS_4S   (4000)
 #define MILLIS_5S   (5000)
 #define MILLIS_8S   (8000)

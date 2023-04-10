@@ -5,10 +5,10 @@
 
 class State {
 public:
-    static constexpr uint8_t FORCE_RESET = BYTES_2('0', '0');
     static constexpr uint8_t MAIN_LOOP = BYTES_2('0', '1');
-    static constexpr uint8_t DFU_LOOP = BYTES_2('F', 'E');
     static constexpr uint8_t SD_READ = BYTES_2('F', 'D');
+    static constexpr uint8_t DFU_LOOP = BYTES_2('F', 'E');
+    static constexpr uint8_t FORCE_RESET = BYTES_2('F', 'F');
 
 protected:
     bool m_has_arg = false;

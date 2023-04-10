@@ -7,6 +7,10 @@
  *
  * @author Vivatsathorn Thitasirivit
  * Contact: www.vt.in.th
+ *
+ * Boot & States Sequence
+ * 1. Boot State: Serial and Screen
+ * 2. Setup State: Init peripherals and Auto-reset and WDT
  */
 
 /* Includes */
@@ -23,7 +27,7 @@
 /* Device Parameters */
 #define DEVICE_NUMBER 0
 #define LORA_CHANNEL 0
-#define FILENAME "cg"
+#define FILENAME ""
 
 /* Programming Options */
 //#define DEVICE_SETUP_MODE
@@ -48,7 +52,7 @@
 #define FLAG_SET_CNT 2
 
 /* Macros */
-#ifdef DEVICE_DEBUG_MODE
+#if defined(DEVICE_DEBUG_MODE)
 #define LOG(CMD) CMD
 #else
 #define LOG(CMD)
@@ -77,13 +81,15 @@ extern inline void user_uart_rx();
 
 extern void lora_cfg_handler();
 
-extern void sd_read();
-
 extern void boot_handler();
 
 extern void setup_handler();
 
 extern void main_loop_handler();
+
+extern void sd_read();
+
+extern void display_data();
 
 extern inline void sig_trap();
 
@@ -91,7 +97,7 @@ extern inline void reset_device();
 
 /* Device Configurations and Parameters */
 EEPROM_Config_t device_params = {
-        .loop_interval = MILLIS_250
+        .loop_interval = MILLIS_1S
 };
 
 /* Global Variables */
@@ -128,13 +134,10 @@ State lora_cfg_state = OSState(lora_cfg_handler, StateID_e::SYS_DFU);
 State sd_read_state = OSState(sd_read, StateID_e::SYS_DFU);
 State sink_state = OSState(sig_trap);
 
-State *setup_states_list[] = {&boot_state, &setup_state};
-
 void setup() {
     /* Run Setups: boot init and setup variables */
-    for (State *&s: setup_states_list) {
-        s->run();
-    }
+    boot_state.run();
+    setup_state.run();
     state = &main_state;
 }
 
@@ -213,8 +216,6 @@ void main_loop_handler() {
     static uint32_t time_now = millis();
     IF_FLAG_DO(flag[0][0], {
         ++data.counter;
-        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
-
         packet = build_string(data.device_name,
                               data.counter,
                               millis() - time_now,
@@ -237,11 +238,17 @@ void main_loop_handler() {
                               data.battery_v);
         time_now = millis();
 
+        /* Log and Write Data */
         LOG(Serial.println(packet));
         SerialLoRa.println(packet);
         sd->file.println(packet);
+        sd->flush();
 
-        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+        /* Display Data on Screen */
+        display_data();
+
+        /* Toggle LED in each packet */
+        digitalWrite(PIN_LED, !digitalRead(PIN_LED));
     })
 
     /* SENSE: Every 50 ms */
@@ -261,13 +268,21 @@ void main_loop_handler() {
 }
 
 void boot_handler() {
-    /* Delay (Wait for Uploading) */
-    delay(5000);
-
     /* Begin Serial USB */
     Serial.begin(UART0_BAUD, UART0_PARITY);
     /* End Serial USB */
 
+    /* Begin Screen */
+    screen = new Screen_OLED();
+    /* End Screen */
+
+    /* Delay (Wait for Potential Uploading) */
+    delay(MILLIS_3S);
+
+    /* Clear Booting Screen */
+    screen->clear();
+
+    /* Set Device Name */
     data.device_name = String("CG") + String(DEVICE_NUMBER);
 }
 
@@ -298,41 +313,8 @@ void lora_cfg_handler() {
     sig_trap();
 }
 
-void sd_read() {
-    static String filename;
-    static uint8_t mode = 0;
-
-    filename = "";
-    while (!Serial.available());
-    delay(100);
-    while (Serial.available()) filename += (char) Serial.read();
-    filename.trim();
-
-    if (filename == "quit" || filename == "exit") {
-        sd->open();
-        state = &main_state;
-        return;
-    } else if (filename == "delete") {
-        mode = 1;
-    } else {
-        mode = 0;
-    }
-
-    sd->close();
-    sd->list_files();
-
-    while (!Serial.available());
-    delay(100);
-    filename = "";
-    while (Serial.available()) filename += (char) Serial.read();
-    filename.trim();
-    if (mode == 0)
-        sd->read_content(filename);
-    else if (mode == 1)
-        sd->delete_file(filename);
-}
-
 /* End Handler Functions Definitions */
+
 void init_peripherals() {
     /* Begin Pins */
     pinMode(PIN_LED, OUTPUT);
@@ -357,10 +339,6 @@ void init_peripherals() {
     ext_sense = new Sensors_Environmental_DS18B20(&sensors_list);
     /* End Sensors */
 
-    /* Begin Screen */
-    screen = new Screen_OLED();
-    /* End Screen */
-
     /* Begin Interface */
     lora->begin_normal(115200U);
     /* End Interface */
@@ -369,6 +347,101 @@ void init_peripherals() {
     pinMode(PIN_WDT_Activate, OUTPUT);
     pinMode(PIN_WDT_PWM, OUTPUT);
 #endif
+}
+
+void sd_read() {
+    static String filename;
+    static uint8_t mode = 0;
+
+    filename = "";
+    while (!Serial.available());
+    delay(100);
+    while (Serial.available()) filename += (char) Serial.read();
+    filename.trim();
+
+    if (filename == "quit" || filename == "exit") {
+        LOG(Serial.println("Returning to Normal..."));
+        sd->open();
+        state = &main_state;
+        return;
+    } else if (filename == "delete") {
+        LOG(Serial.println("Delete Mode: Listing Directory..."));
+        mode = 1;
+    } else if (filename == "delete-all") {
+        LOG(Serial.println("Delete All Mode"));
+        sd->delete_all();
+        sd->close();
+        return;
+    } else {
+        LOG(Serial.println("Listing Directory..."));
+        mode = 0;
+    }
+
+    sd->close();
+    sd->list_files();
+
+    LOG(Serial.println("Input file name..."));
+
+    while (!Serial.available());
+    delay(100);
+    filename = "";
+    while (Serial.available()) filename += (char) Serial.read();
+    filename.trim();
+
+    LOG(Serial.println(filename));
+
+    if (mode == 0)
+        sd->read_content(filename);
+    else if (mode == 1)
+        sd->delete_file(filename);
+}
+
+void display_data() {
+//            data.device_name,
+//            String(data.pos0.latitude, 6),
+//            String(data.pos0.longitude, 6),
+//            data.pos0.altitude,
+//
+//            String(data.pos1.latitude, 6),
+//            String(data.pos1.longitude, 6),
+//            data.pos1.altitude,
+//
+//            data.pht.altitude,
+//            data.pht.temperature,
+//            data.pht.humidity,
+//            data.pht.pressure,
+//            data.pht_ext.altitude,
+//            data.pht_ext.temperature,
+//
+//            data.pht_ext.humidity,
+//            data.pht_ext.pressure,
+//            data.ext_temperature,
+//            data.battery_v
+
+    if (!screen->valid()) return;
+    screen->clear();
+    screen->display->setCursor(0, 7);
+    screen->display->println("Device Name: " + data.device_name);
+    screen->display->println("Battery: " + String(data.battery_v) + " V");
+    screen->display->println("------------------------------");
+    screen->display->println("Pos 0: " + build_string(String(data.pos0.latitude, 6),
+                                                      String(data.pos0.longitude, 6),
+                                                      data.pos0.altitude));
+    screen->display->println("Pos 1: " + build_string(String(data.pos1.latitude, 6),
+                                                      String(data.pos1.longitude, 6),
+                                                      data.pos1.altitude));
+    screen->display->println("------------------------------");
+    screen->display->println("PHT+A 0: " + build_string(data.pht.pressure,
+                                                        data.pht.humidity,
+                                                        data.pht.temperature,
+                                                        data.pht.altitude));
+    screen->display->println("PHT+A 1: " + build_string(data.pht_ext.pressure,
+                                                        data.pht_ext.humidity,
+                                                        data.pht_ext.temperature,
+                                                        data.pht_ext.altitude));
+    screen->display->println("------------------------------");
+    screen->display->println("Ext Temp Probe: " + String(data.ext_temperature));
+    screen->display->display();
 }
 
 void timer_increment() {
