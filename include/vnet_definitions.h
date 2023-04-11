@@ -1,5 +1,7 @@
-#ifndef PINTO_V1_FIRMWARE_VNET_DEFINITIONS_H
-#define PINTO_V1_FIRMWARE_VNET_DEFINITIONS_H
+#ifndef VNET_DEFINITIONS_H
+#define VNET_DEFINITIONS_H
+
+#include <stdint.h>
 
 #define USB_VENDOR_ID        0x239A
 #define USB_PRODUCT_ID       0x8023
@@ -24,7 +26,7 @@
 #define EEPROM_CFG_START (0)
 #endif
 
-/* AVR ATmega2560 Pin Macros */
+/** AVR ATmega2560 Pin Macros */
 #define PIN_D0  (0)
 #define PIN_D1  (1)
 #define PIN_D2  (2)
@@ -81,11 +83,11 @@
 #define PIN_D53 (53)
 #define PIN_D54 (54)
 
-/* Default UART Pin */
+/** Default UART Pin */
 #define UART0_RXD PIN_D0
 #define UART0_TXD PIN_D1
 
-/* AVR ATmega2560 UART Pin Macros */
+/** AVR ATmega2560 UART Pin Macros */
 #define UART1_RXD PIN_D19
 #define UART1_TXD PIN_D18
 #define UART2_RXD PIN_D17
@@ -93,7 +95,7 @@
 #define UART3_RXD PIN_D15
 #define UART3_TXD PIN_D14
 
-/* Millis Standardized Macros */
+/** Millis Standardized Macros */
 #define MILLIS_10   (10)
 #define MILLIS_20   (20)
 #define MILLIS_30   (30)
@@ -114,7 +116,7 @@
 #define MILLIS_8S   (8000)
 #define MILLIS_10S  (10000)
 
-/* Communication Frequency Channel Macros */
+/** Communication Frequency Channel Macros */
 #define LORA_433_CH1  (410000000)
 #define LORA_433_CH2  (411000000)
 #define LORA_433_CH3  (412000000)
@@ -181,20 +183,25 @@
 #define LORA_915_CH31 (930000000)
 #define LORA_915_CH32 (931000000)
 
-/* Sensors Macros and Addresses */
+/** Sensors Macros and Addresses */
 #define ADDR_BME280   (0x76)
 #define ADDR_CCS811   (0x5A)
 #define ADDR_BNO085   (0x4A)
 #define ADDR_BNO055   (0x28)
 #define ADDR_ICM20948 (0x68)
 
-/* Other Macros */
+/** Other Macros */
 #define WEAK __attribute__((weak))
 #define PAUSE_INTERRUPT(BLOCK) cli(); BLOCK sei();
 #define BYTES_2(_B1, _B0) ((_B1<<1)+_B0)
 #define IF_FLAG_DO(FLAG, BLOCK) if(FLAG){BLOCK FLAG=false;}
 #define INCREMENT_AND_COMPARE(TIM_CNT, FLAG, INTERVAL) if(++TIM_CNT==INTERVAL){FLAG=true;TIM_CNT=0;}
 #define DO_LOOP(ITERATION, CMD) for(size_t _i=0;_i<ITERATION;++_i) CMD
+
+#define SQUARE(X) (X*X)
+#define MAP(X,IN_MIN,IN_MAX,OUT_MIN,OUT_MAX) ((X-IN_MIN)*(OUT_MAX-OUT_MIN)/(IN_MAX-IN_MIN)+OUT_MIN)
+#define CLAMP CONSTRAIN
+#define CONSTRAIN(X,X_MIN,X_MAX) (X<X_MIN?X_MIN:X>X_MAX?X_MAX:X)
 
 typedef enum {
     SYS_DISABLED = 0,
@@ -233,21 +240,12 @@ typedef struct {
 } EEPROM_Config_t;
 
 typedef uint16_t tim_cnt_t[8];
+
 typedef bool flag_t[8];
 
 typedef void (*HandlerFunc_Arg_t)(void *arg);
 
 typedef void (*HandlerFunc_t)();
-
-template<typename T>
-T m_square(T x) {
-    return x * x;
-}
-
-template<typename T>
-T map_val(T x, T in_min, T in_max, T out_min, T out_max) {
-    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-}
 
 int16_t averageAnalogRead(int pinToRead) {
     static uint8_t num_samples = 8;
@@ -259,7 +257,7 @@ int16_t averageAnalogRead(int pinToRead) {
     return accum / num_samples;
 }
 
-/*
+/**
  * Variadic Argument Template
  * va_list args;
  * va_start(args, arg);
@@ -272,4 +270,4 @@ int16_t averageAnalogRead(int pinToRead) {
  * va_end(args);
  */
 
-#endif //PINTO_V1_FIRMWARE_VNET_DEFINITIONS_H
+#endif //VNET_DEFINITIONS_H

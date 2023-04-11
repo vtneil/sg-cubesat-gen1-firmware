@@ -1,14 +1,26 @@
-#ifndef PINTO_V1_FIRMWARE_VNET_TOOLS_H
-#define PINTO_V1_FIRMWARE_VNET_TOOLS_H
+#ifndef VNET_TOOLS_H
+#define VNET_TOOLS_H
 
 #include <Arduino.h>
 #include "vnet_definitions.h"
 
+
+/**
+ * Build Arduino String from multiple fields, separated by commas.
+ * @param last Value
+ * @return built Arduino String
+ */
 template<typename T>
 String build_string(T last) {
     return String(last);
 }
 
+/**
+ * Build Arduino String from multiple fields, separated by commas.
+ * @param first Value
+ * @param args Values
+ * @return built Arduino String
+ */
 template<typename T, typename... Args>
 String build_string(T first, Args... args) {
     String s0 = "";
@@ -23,6 +35,10 @@ extern "C" char* sbrk(int incr);
 extern char *__brkval;
 #endif  // __arm__
 
+/**
+ * Get Free RAM Memory
+ * @return free memory remaining
+ */
 size_t free_memory() {
     char top;
 #ifdef __arm__
@@ -34,4 +50,4 @@ size_t free_memory() {
 #endif  // __arm__
 }
 
-#endif //PINTO_V1_FIRMWARE_VNET_TOOLS_H
+#endif //VNET_TOOLS_H
