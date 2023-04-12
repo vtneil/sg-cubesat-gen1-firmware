@@ -1,5 +1,5 @@
-#ifndef PINTO_V1_FIRMWARE_VNET_SENSORS_H
-#define PINTO_V1_FIRMWARE_VNET_SENSORS_H
+#ifndef VNET_SENSORS_H
+#define VNET_SENSORS_H
 
 /** Includes */
 #include <Arduino.h>
@@ -34,7 +34,14 @@ typedef struct {
     double i;
     double j;
     double k;
-} Quaternion_t;
+} Vec4_t;
+
+typedef Vec4_t Quaternion_t;
+
+typedef struct {
+    double x;
+    double y;
+} Vec2_t;
 
 typedef struct {
     double x;
@@ -82,9 +89,10 @@ typedef struct {
 typedef enum {
     GPS_ATGM336H = 0,
     GPS_SparkFun
-} GPS_Type_e;
+} GPS_Type;
 
 /** Sensors Tools Classes */
+
 namespace impl {
     class Sensors_Global {
     protected:
@@ -179,6 +187,7 @@ class Sensors_Environmental : protected impl::Sensors_Global {
 private:
     static constexpr uint8_t pin_uv = A0;
     static constexpr uint8_t pin_33 = A1;
+    uint8_t bme_id = 0;
     Adafruit_BME280 *bme280;
     Adafruit_CCS811 *ccs811;
 
@@ -187,11 +196,12 @@ public:
     Sensors_Environmental(Peripherals_t *sensors_list,
                           uint8_t bme280_addr = ADDR_BME280,
                           uint8_t ccs811_addr = ADDR_CCS811) : Sensors_Global(sensors_list) {
+        bme_id = bme280_addr - ADDR_BME280;
         bme280 = new Adafruit_BME280();
         ccs811 = new Adafruit_CCS811();
-        list->env_bme280 = bme280->begin(bme280_addr, wire);
+        list->env_bme280[bme_id] = bme280->begin(bme280_addr, wire);
         list->env_ccs811 = ccs811->begin(ccs811_addr, wire);
-        if (!list->env_bme280) {
+        if (!list->env_bme280[bme_id]) {
             delete bme280;
             bme280 = nullptr;
         }
@@ -199,11 +209,11 @@ public:
             delete ccs811;
             ccs811 = nullptr;
         }
-        m_valid = list->env_bme280 && list->env_ccs811;
+        m_valid = list->env_bme280[bme_id] && list->env_ccs811;
     }
 
     Sensors_Data_PHT_t read_PHT() {
-        if (list->env_bme280) {
+        if (list->env_bme280[bme_id]) {
             return {
                     bme280->readTemperature(),
                     bme280->readHumidity(),
@@ -235,6 +245,27 @@ public:
         int16_t lvl_uv = averageAnalogRead(pin_uv);
         int16_t lvl_33 = averageAnalogRead(pin_33);
         return MAP(3.3 * lvl_uv / lvl_33, 0.99, 2.8, 0.0, 15.0);
+    }
+};
+
+class Sensors_Environmental_DS18B20 : protected impl::Sensors_Global {
+private:
+    OneWire one_wire_int{0};
+    DallasTemperature sensor;
+    DeviceAddress addr = {};
+public:
+    explicit
+    Sensors_Environmental_DS18B20(Peripherals_t *sensors_list) :
+            Sensors_Global(sensors_list) {
+        sensor.setOneWire(&one_wire_int);
+        sensor.setResolution(9);
+        sensor.begin();
+        sensor.getAddress(addr, 0);
+    }
+
+    float read_temperature() {
+        sensor.requestTemperaturesByAddress(addr);
+        return sensor.getTempCByIndex(0);
     }
 };
 
@@ -519,25 +550,4 @@ public:
     }
 };
 
-class Sensors_Environmental_DS18B20 : protected impl::Sensors_Global {
-private:
-    OneWire one_wire_int{0};
-    DallasTemperature sensor;
-    DeviceAddress addr = {};
-public:
-    explicit
-    Sensors_Environmental_DS18B20(Peripherals_t *sensors_list) :
-            Sensors_Global(sensors_list) {
-        sensor.setOneWire(&one_wire_int);
-        sensor.setResolution(9);
-        sensor.begin();
-        sensor.getAddress(addr, 0);
-    }
-
-    float read_temperature() {
-        sensor.requestTemperaturesByAddress(addr);
-        return sensor.getTempCByIndex(0);
-    }
-};
-
-#endif //PINTO_V1_FIRMWARE_VNET_SENSORS_H
+#endif //VNET_SENSORS_H

@@ -210,10 +210,10 @@ typedef enum {
     SYS_MAIN,
     SYS_DFU,
     DEBUG
-} StateID_e;
+} State_ID;
 
 typedef struct {
-    bool env_bme280;
+    bool env_bme280[2];
     bool env_ccs811;
     bool env_gy8511;
     bool env_pms7003;

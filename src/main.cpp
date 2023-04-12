@@ -21,10 +21,10 @@
 #include "vnet_definitions.h"
 #include "vnet_tools.h"
 #include "vnet_states.h"
+#include "vnet_peripherals.h"
+#include "vnet_serializer.h"
 
 #define ONEWIRE_CUSTOM_PIN
-
-#include "vnet_peripherals.h"
 
 /** Device Parameters */
 #define DEVICE_NUMBER 0
@@ -36,6 +36,7 @@
 #define DEVICE_DEBUG_MODE
 //#define ENABLE_HW_RESET
 #define OPTIMIZE_GPS_COMPILE
+//#define SERIALIZE_PAYLOAD
 
 /** Definitions */
 #define PIN_LED          PIN_D10
@@ -104,9 +105,15 @@ EEPROM_Config_t device_params = {
 
 /** Global Variables */
 Peripherals_t sensors_list = {};
+
 LoRa_E32 *lora;
+Storage_SD *storage;
+Screen_OLED *screen;
+
 Sensors_Environmental *env_sensors;
 Sensors_Environmental *env_sensors_ext;
+Sensors_Environmental_DS18B20 *ext_sense;
+
 #if defined(OPTIMIZE_GPS_COMPILE)
 Sensors_GPS_SparkFun *gps0;
 Sensors_GPS_Serial *gps1;
@@ -114,10 +121,8 @@ Sensors_GPS_Serial *gps1;
 Sensors_GPS *gps0;
 Sensors_GPS *gps1;
 #endif
-Sensors_Environmental_DS18B20 *ext_sense;
-Storage_SD *sd;
-Screen_OLED *screen;
 
+Serializer<Data_t> serializer;
 Data_t data = {};
 String packet;
 
@@ -129,11 +134,11 @@ uint8_t uart0_rx_ptr = 0;
 
 State *state = nullptr;
 
-State boot_state = OSState(boot_handler, StateID_e::SYS_BOOT_UP);
-State setup_state = OSState(setup_handler, StateID_e::SYS_SETUP);
-State main_state = OSState(main_loop_handler, StateID_e::SYS_MAIN);
-State lora_cfg_state = OSState(lora_cfg_handler, StateID_e::SYS_DFU);
-State sd_read_state = OSState(sd_read, StateID_e::SYS_DFU);
+State boot_state = OSState(boot_handler, State_ID::SYS_BOOT_UP);
+State setup_state = OSState(setup_handler, State_ID::SYS_SETUP);
+State main_state = OSState(main_loop_handler, State_ID::SYS_MAIN);
+State lora_cfg_state = OSState(lora_cfg_handler, State_ID::SYS_DFU);
+State sd_read_state = OSState(sd_read, State_ID::SYS_DFU);
 State sink_state = OSState(sig_trap);
 
 void setup() {
@@ -241,10 +246,21 @@ void main_loop_handler() {
         time_now = millis();
 
         /** Log and Write Data */
+
+#if defined(SERIALIZE_PAYLOAD)
+        serializer.serialize(data);
+        LOG(Serial.write(serializer.buf(), sizeof(data)));
+        LOG(Serial.write(serializer.term, sizeof(serializer.term)));
+
+        SerialLoRa.write(serializer.buf(), sizeof(data));
+        SerialLoRa.write(serializer.term, sizeof(serializer.term));
+#else
         LOG(Serial.println(packet));
         SerialLoRa.println(packet);
-        sd->file.println(packet);
-        sd->flush();
+#endif
+
+        storage->file.println(packet);
+        storage->flush();
 
         /** Display Data on Screen */
         display_data();
@@ -262,7 +278,7 @@ void main_loop_handler() {
         data.battery_v = (float) (0.0051 * 4 * analogRead(PIN_ADC_BATT));
     })
 
-    /** SENSE Dallas: Every 2000 ms */
+    /** SENSE Dallas: Every 2000 ms to prevent whole system delay */
     IF_FLAG_DO(flag[0][2], {
         data.ext_temperature = ext_sense->read_temperature();
     })
@@ -302,9 +318,9 @@ void lora_cfg_handler() {
     lora->cmd_set_params(0,
                          LoRa_E32::LORA_BAUD_115200,
                          LoRa_E32::LORA_8N1,
-                         LoRa_E32::LORA_RATE_9600,
-                         15, LoRa_E32::LORA_TX_MAX,
-                         false, true);
+                         LoRa_E32::LORA_RATE_2400,
+                         LORA_CHANNEL, LoRa_E32::LORA_TX_MAX,
+                         true, true);
 
     lora->cmd_write_params();
 
@@ -330,12 +346,12 @@ void init_peripherals() {
     /** End LoRa */
 
     /** Begin SD */
-    sd = new Storage_SD(FILENAME);
+    storage = new Storage_SD(FILENAME);
     /** End SD */
 
     /** Begin Sensors */
-    env_sensors = new Sensors_Environmental(&sensors_list);
-    env_sensors_ext = new Sensors_Environmental(&sensors_list, 0x77);
+    env_sensors = new Sensors_Environmental(&sensors_list, 0x77);
+    env_sensors_ext = new Sensors_Environmental(&sensors_list, 0x76);
     gps0 = new Sensors_GPS_SparkFun(&sensors_list);
     gps1 = new Sensors_GPS_Serial(&sensors_list, &SerialGPS1);
     ext_sense = new Sensors_Environmental_DS18B20(&sensors_list);
@@ -363,7 +379,7 @@ void sd_read() {
 
     if (filename == "quit" || filename == "exit") {
         LOG(Serial.println("Returning to Normal..."));
-        sd->open();
+        storage->open();
         state = &main_state;
         return;
     } else if (filename == "delete") {
@@ -371,16 +387,16 @@ void sd_read() {
         mode = 1;
     } else if (filename == "delete-all") {
         LOG(Serial.println("Delete All Mode"));
-        sd->delete_all();
-        sd->close();
+        storage->delete_all();
+        storage->close();
         return;
     } else {
         LOG(Serial.println("Listing Directory..."));
         mode = 0;
     }
 
-    sd->close();
-    sd->list_files();
+    storage->close();
+    storage->list_files();
 
     LOG(Serial.println("Input file name..."));
 
@@ -393,9 +409,9 @@ void sd_read() {
     LOG(Serial.println(filename));
 
     if (mode == 0)
-        sd->read_content(filename);
+        storage->read_content(filename);
     else if (mode == 1)
-        sd->delete_file(filename);
+        storage->delete_file(filename);
 }
 
 void display_data() {

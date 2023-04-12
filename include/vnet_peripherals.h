@@ -121,9 +121,7 @@ public:
         height = h;
         display = new Adafruit_SSD1306(width, height, wire, -1);
         status = display->begin(SSD1306_SWITCHCAPVCC, 0x3D);
-        if (!status) {
-            delete display;
-        } else {
+        if (status) {
             draw_space_logo();
             display->setTextColor(1);
             display->setTextSize(1);

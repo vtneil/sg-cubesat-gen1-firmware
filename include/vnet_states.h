@@ -14,16 +14,16 @@ protected:
     bool m_has_arg = false;
     State *m_prev;
     State *m_next;
-    StateID_e m_id;
+    State_ID m_id;
     HandlerFunc_Arg_t m_func;
 
 public:
-    State(HandlerFunc_t func, StateID_e id, State *prev = nullptr, State *next = nullptr) :
+    State(HandlerFunc_t func, State_ID id, State *prev = nullptr, State *next = nullptr) :
             State((HandlerFunc_Arg_t) func, id, prev, next) {
         m_has_arg = false;
     }
 
-    State(HandlerFunc_Arg_t func, StateID_e id, State *prev = nullptr, State *next = nullptr) {
+    State(HandlerFunc_Arg_t func, State_ID id, State *prev = nullptr, State *next = nullptr) {
         m_id = id;
         m_func = func;
         m_prev = prev;
@@ -31,7 +31,7 @@ public:
         m_has_arg = true;
     }
 
-    StateID_e id() const {
+    State_ID id() const {
         return m_id;
     }
 
@@ -64,12 +64,12 @@ public:
 class OSState : public State {
 public:
     explicit OSState(HandlerFunc_t func,
-                     StateID_e id = SYS_DISABLED,
+                     State_ID id = SYS_DISABLED,
                      State *prev = nullptr,
                      State *next = nullptr) : State(func, id, prev, next) {}
 
     explicit OSState(HandlerFunc_Arg_t func,
-                     StateID_e id = SYS_DISABLED,
+                     State_ID id = SYS_DISABLED,
                      State *prev = nullptr,
                      State *next = nullptr) : State(func, id, prev, next) {}
 };
