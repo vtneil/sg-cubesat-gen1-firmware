@@ -32,39 +32,48 @@ namespace impl {
         HardwareSerial *m_SerialLoRa;
         uint8_t MASK_M0; // PH2 for SG Sat
         uint8_t MASK_M1; // PH3 for SG Sat
-        volatile uint8_t DDR_M0;
-        volatile uint8_t DDR_M1;
-        volatile uint8_t PORT_M0;
-        volatile uint8_t PORT_M1;
+        volatile uint8_t *DDR_M0;
+        volatile uint8_t *DDR_M1;
+        volatile uint8_t *PORT_M0;
+        volatile uint8_t *PORT_M1;
         uint8_t config[16] = {};
         uint32_t m_baud;
 
     public:
         /**
-         * Constructor with digital pin
+         * Constructor with digital pin (mapped pins)
+         *
+         * @param SerialLoRa Address of LoRa's Serial Handler
+         * @param baud Baud rate to communicate with LoRa
+         * @param digitalPin_M0 digital pin connected to M0
+         * @param digitalPin_M1 digital pin connected to M1
          */
         LoRa_Global_Serial(HardwareSerial *SerialLoRa, uint32_t baud,
-                           uint8_t digitalPin_M0, uint8_t digitalPin_M1) {
-            this->m_SerialLoRa = SerialLoRa;
-            this->m_baud = baud;
-
-            MASK_M0 = digitalPinToBitMask(digitalPin_M0);
-            PORT_M0 = *portOutputRegister(MASK_M0);
-            DDR_M0 = *portModeRegister(MASK_M0);
-            MASK_M1 = digitalPinToBitMask(digitalPin_M1);
-            PORT_M1 = *portOutputRegister(MASK_M1);
-            DDR_M1 = *portModeRegister(MASK_M1);
-
-            DDR_M0 |= (1 << MASK_M0);      // Set M0 to OUTPUT mode
-            DDR_M1 |= (1 << MASK_M1);      // Set M1 to OUTPUT mode
-        }
+                           uint8_t digitalPin_M0, uint8_t digitalPin_M1) :
+                LoRa_Global_Serial(SerialLoRa,
+                                   baud,
+                                   portModeRegister(digitalPinToPort(digitalPin_M0)),
+                                   portModeRegister(digitalPinToPort(digitalPin_M1)),
+                                   portOutputRegister(digitalPinToPort(digitalPin_M0)),
+                                   portOutputRegister(digitalPinToPort(digitalPin_M1)),
+                                   digitalPinToBitMask(digitalPin_M0),
+                                   digitalPinToBitMask(digitalPin_M1)) {}
 
         /**
-         * Constructor with direct pin mapping
+         * Constructor with direct pin (or unmapped pins)
+         *
+         * @param SerialLoRa Address of LoRa's Serial Handler
+         * @param baud Baud rate to communicate with LoRa
+         * @param ddr_M0 DDR Register of M0 port, e.g., DDRH
+         * @param ddr_M1 DDR Register of M1 port, e.g., DDRH
+         * @param port_M0 PORT Register of M0 port, e.g., PORTH
+         * @param port_M1 PORT Register of M1 port, e.g., PORTH
+         * @param mask_M0 Bitmask of M0 port, e.g. PH3
+         * @param mask_M1 Bitmask of M1 port, e.g., PH4
          */
         LoRa_Global_Serial(HardwareSerial *SerialLoRa, uint32_t baud,
-                           volatile uint8_t &ddr_M0, volatile uint8_t &ddr_M1,
-                           volatile uint8_t &port_M0, volatile uint8_t &port_M1,
+                           volatile uint8_t *ddr_M0, volatile uint8_t *ddr_M1,
+                           volatile uint8_t *port_M0, volatile uint8_t *port_M1,
                            uint8_t mask_M0, uint8_t mask_M1) {
             this->m_SerialLoRa = SerialLoRa;
             this->m_baud = baud;
@@ -72,18 +81,19 @@ namespace impl {
             MASK_M0 = mask_M0;
             PORT_M0 = port_M0;
             DDR_M0 = ddr_M0;
+
             MASK_M1 = mask_M1;
             PORT_M1 = port_M1;
             DDR_M1 = ddr_M1;
 
-            DDR_M0 |= (1 << MASK_M0);      // Set M0 to OUTPUT mode
-            DDR_M1 |= (1 << MASK_M1);      // Set M1 to OUTPUT mode
+            *DDR_M0 |= (MASK_M0);      // Set M0 to OUTPUT mode
+            *DDR_M1 |= (MASK_M1);      // Set M1 to OUTPUT mode
         }
 
         virtual void begin_normal(uint32_t baud) {
             this->m_baud = baud;
-            PORT_M0 &= ~((1 << MASK_M0));  // Set M0 = 0
-            PORT_M1 &= ~((1 << MASK_M1));  // Set M1 = 0 (Normal Mode)
+            *PORT_M0 &= ~((MASK_M0));  // Set M0 = 0
+            *PORT_M1 &= ~((MASK_M1));  // Set M1 = 0 (Normal Mode)
 
             delay(100);
 
@@ -91,8 +101,8 @@ namespace impl {
         }
 
         virtual void begin_cfg() {
-            PORT_M0 |= (1 << MASK_M0);     // Set M0 = 1
-            PORT_M1 |= (1 << MASK_M1);     // Set M1 = 1 (Sleep Mode)
+            *PORT_M0 |= (MASK_M0);     // Set M0 = 1
+            *PORT_M1 |= (MASK_M1);     // Set M1 = 1 (Sleep Mode)
 
             delay(100);
 
@@ -194,7 +204,7 @@ public:
         config[3] |= (parity << 6);
         config[3] |= (baud_rate << 3);
         config[3] |= (data_rate);
-        config[4] |= (channel & 0b00011111);
+        config[4] |= (channel);
         config[5] = 0b01000000 | enb_FEC << 2 | tx_power; // default Push-pull, WOR 250 ms
     }
 
