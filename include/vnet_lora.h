@@ -114,6 +114,7 @@ namespace impl {
                 Serial.print(" ");
                 ++i;
             }
+            Serial.println();
         }
 
         virtual void cmd_write_params() {
@@ -341,12 +342,9 @@ public:
     static constexpr uint8_t LORA_CHANNEL_10 = 10;
     static constexpr uint8_t LORA_CHANNEL_11 = 11;
 
-    static constexpr uint8_t LORA_RATE_300 = 0b000;
-    static constexpr uint8_t LORA_RATE_1200 = 0b001;
-    static constexpr uint8_t LORA_RATE_2400 = 0b010;
-    static constexpr uint8_t LORA_RATE_4800 = 0b011;
-    static constexpr uint8_t LORA_RATE_9600 = 0b100;
-    static constexpr uint8_t LORA_RATE_19200 = 0b101;
+    static constexpr uint8_t LORA_RATE_250k = 0b00;
+    static constexpr uint8_t LORA_RATE_1M = 0b01;
+    static constexpr uint8_t LORA_RATE_2M = 0b10;
 
 public:
     using impl::LoRa_Global_Serial::LoRa_Global_Serial;
@@ -354,7 +352,7 @@ public:
     void cmd_set_params(uint16_t addr, uint8_t baud_rate,
                         uint8_t parity, uint8_t data_rate,
                         uint8_t channel, uint8_t tx_power,
-                        bool enb_FEC, bool save_params) {
+                        bool save_params) {
         memset(config, 0, 6);
         uint8_t addr_l = addr & 0xff;
         uint8_t addr_h = (addr >> 8) & 0xff;
@@ -365,7 +363,7 @@ public:
         config[3] |= (baud_rate << 3);
         config[3] |= (data_rate);
         config[4] |= (channel & 0b00001111);
-        config[5] = 0b01000000 | enb_FEC << 2 | tx_power; // default Push-pull, WOR 250 ms
+        config[5] = 0b01000000 | tx_power; // default Push-pull, WOR 250 ms
     }
 
     void print_params() override {
@@ -429,25 +427,16 @@ public:
         }
 
         Serial.print("Data Rate  ");
-        uint8_t data_r = (config[3] & 0b00000111);
+        uint8_t data_r = (config[3] & 0b00000011);
         switch (data_r) {
-            case LORA_RATE_1200:
-                Serial.println("1200");
+            case LORA_RATE_250k:
+                Serial.println("250k");
                 break;
-            case LORA_RATE_2400:
-                Serial.println("2400");
+            case LORA_RATE_1M:
+                Serial.println("1M");
                 break;
-            case LORA_RATE_4800:
-                Serial.println("4800");
-                break;
-            case LORA_RATE_9600:
-                Serial.println("9600");
-                break;
-            case LORA_RATE_19200:
-                Serial.println("19200");
-                break;
-            case LORA_RATE_300:
-                Serial.println("300");
+            case LORA_RATE_2M:
+                Serial.println("2M");
                 break;
             default:
                 Serial.println("N/A");
@@ -456,13 +445,6 @@ public:
 
         Serial.print("Channel    ");
         Serial.println(config[4], 16);
-
-        Serial.print("FEC        ");
-        uint8_t fec = (config[5] & 0b00000100);
-        if (fec)
-            Serial.println("ENABLED");
-        else
-            Serial.println("DISABLED");
 
         Serial.print("Tx Power   ");
         uint8_t tx_pow = (config[5] & 0b00000011);
