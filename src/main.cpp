@@ -92,7 +92,9 @@ extern void main_loop_handler();
 
 extern void sd_read();
 
-extern void display_data();
+extern void display_OLED();
+
+extern void display_LCD();
 
 extern inline void sig_trap();
 
@@ -108,7 +110,8 @@ Peripherals_t sensors_list = {};
 
 LoRa_E32 *lora;
 Storage_SD *storage;
-Screen_OLED *screen;
+Screen_OLED *oled;
+Screen_LCD *lcd;
 
 Sensors_Environmental *env_sensors;
 Sensors_Environmental *env_sensors_ext;
@@ -263,7 +266,8 @@ void main_loop_handler() {
         storage->flush();
 
         /** Display Data on Screen */
-        display_data();
+        display_OLED();
+        display_LCD();
 
         /** Toggle LED in each packet */
         digitalWrite(PIN_LED, !digitalRead(PIN_LED));
@@ -291,14 +295,16 @@ void boot_handler() {
     /** End Serial USB */
 
     /** Begin Screen */
-    screen = new Screen_OLED();
+    oled = new Screen_OLED();
+    lcd = new Screen_LCD();
     /** End Screen */
 
-    /** Delay (Wait for Potential Uploading) */
+    /** Delay (Wait for Potential Uploading and Logo Showing) */
     delay(MILLIS_3S);
 
     /** Clear Booting Screen */
-    screen->clear();
+    oled->clear();
+    lcd->clear();
 
     /** Set Device Name */
     data.device_name = String("CG") + String(DEVICE_NUMBER);
@@ -342,7 +348,7 @@ void init_peripherals() {
     /** End Pins */
 
     /** Begin LoRa */
-    lora = new LoRa_E32(&SerialLoRa, 115200U, DDRH, DDRH, PORTH, PORTH, PH2, PH3);
+    lora = new LoRa_E32(&SerialLoRa, 115200U, &DDRH, &DDRH, &PORTH, &PORTH, (1 << PH2), (1 << PH3));
     /** End LoRa */
 
     /** Begin SD */
@@ -414,52 +420,35 @@ void sd_read() {
         storage->delete_file(filename);
 }
 
-void display_data() {
-//            data.device_name,
-//            String(data.pos0.latitude, 6),
-//            String(data.pos0.longitude, 6),
-//            data.pos0.altitude,
-//
-//            String(data.pos1.latitude, 6),
-//            String(data.pos1.longitude, 6),
-//            data.pos1.altitude,
-//
-//            data.pht.altitude,
-//            data.pht.temperature,
-//            data.pht.humidity,
-//            data.pht.pressure,
-//            data.pht_ext.altitude,
-//            data.pht_ext.temperature,
-//
-//            data.pht_ext.humidity,
-//            data.pht_ext.pressure,
-//            data.ext_temperature,
-//            data.battery_v
-
-    if (!screen->valid()) return;
-    screen->clear();
-    screen->display->setCursor(0, 7);
-    screen->display->println("Device Name: " + data.device_name);
-    screen->display->println("Battery: " + String(data.battery_v) + " V");
-    screen->display->println("------------------------------");
-    screen->display->println("Pos 0: " + build_string(String(data.pos0.latitude, 6),
+void display_OLED() {
+    if (!oled->valid()) return;
+    oled->clear();
+    oled->display->setCursor(0, 7);
+    oled->display->println("Device Name: " + data.device_name);
+    oled->display->println("Battery: " + String(data.battery_v) + " V");
+    oled->display->println("------------------------------");
+    oled->display->println("Pos 0: " + build_string(String(data.pos0.latitude, 6),
                                                       String(data.pos0.longitude, 6),
                                                       data.pos0.altitude));
-    screen->display->println("Pos 1: " + build_string(String(data.pos1.latitude, 6),
+    oled->display->println("Pos 1: " + build_string(String(data.pos1.latitude, 6),
                                                       String(data.pos1.longitude, 6),
                                                       data.pos1.altitude));
-    screen->display->println("------------------------------");
-    screen->display->println("PHT+A 0: " + build_string(data.pht.pressure,
+    oled->display->println("------------------------------");
+    oled->display->println("PHT+A 0: " + build_string(data.pht.pressure,
                                                         data.pht.humidity,
                                                         data.pht.temperature,
                                                         data.pht.altitude));
-    screen->display->println("PHT+A 1: " + build_string(data.pht_ext.pressure,
+    oled->display->println("PHT+A 1: " + build_string(data.pht_ext.pressure,
                                                         data.pht_ext.humidity,
                                                         data.pht_ext.temperature,
                                                         data.pht_ext.altitude));
-    screen->display->println("------------------------------");
-    screen->display->println("Ext Temp Probe: " + String(data.ext_temperature));
-    screen->display->display();
+    oled->display->println("------------------------------");
+    oled->display->println("Ext Temp Probe: " + String(data.ext_temperature));
+    oled->display->display();
+}
+
+void display_LCD() {
+
 }
 
 void timer_increment() {

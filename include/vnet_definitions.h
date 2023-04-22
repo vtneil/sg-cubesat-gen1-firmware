@@ -199,9 +199,9 @@
 #define DO_LOOP(ITERATION, CMD) for(size_t _i=0;_i<ITERATION;++_i) CMD
 
 #define SQUARE(X) (X*X)
-#define MAP(X,IN_MIN,IN_MAX,OUT_MIN,OUT_MAX) ((X-IN_MIN)*(OUT_MAX-OUT_MIN)/(IN_MAX-IN_MIN)+OUT_MIN)
+#define MAP(X, IN_MIN, IN_MAX, OUT_MIN, OUT_MAX) ((X-IN_MIN)*(OUT_MAX-OUT_MIN)/(IN_MAX-IN_MIN)+OUT_MIN)
 #define CLAMP CONSTRAIN
-#define CONSTRAIN(X,X_MIN,X_MAX) (X<X_MIN?X_MIN:X>X_MAX?X_MAX:X)
+#define CONSTRAIN(X, X_MIN, X_MAX) (X<X_MIN?X_MIN:X>X_MAX?X_MAX:X)
 
 typedef enum {
     SYS_DISABLED = 0,
@@ -243,9 +243,16 @@ typedef uint16_t tim_cnt_t[8];
 
 typedef bool flag_t[8];
 
-typedef void (*HandlerFunc_Arg_t)(void *arg);
+template<typename T, typename... Args>
+using FuncPtr_t = T (*)(Args... args);
 
-typedef void (*HandlerFunc_t)();
+using HandlerFunc_t = FuncPtr_t<void>;
+
+using HandlerFunc_Arg_t = FuncPtr_t<void, void *>;
+
+//typedef void (*HandlerFunc_Arg_t)(void *arg);
+
+//typedef void (*HandlerFunc_t)();
 
 int16_t averageAnalogRead(int pinToRead) {
     static uint8_t num_samples = 8;

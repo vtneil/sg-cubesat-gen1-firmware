@@ -92,25 +92,14 @@ typedef enum {
 } GPS_Type;
 
 /** Sensors Tools Classes */
-
 namespace impl {
     class Sensors_Global {
     protected:
         bool m_valid = false;
         Peripherals_t *list = nullptr;
-        TwoWire *wire = &Wire;
 
         explicit
-        Sensors_Global(Peripherals_t *sensors_list) : list{sensors_list} {
-#if !defined(CORE_TEENSY)
-            if (TWCR & (_BV(TWEN) == 0)) {
-#endif
-                wire->begin();
-                wire->setClock(400000UL);
-#if !defined(CORE_TEENSY)
-            }
-#endif
-        }
+        Sensors_Global(Peripherals_t *sensors_list) : list{sensors_list} {}
 
     public:
         Peripherals_t &devices() {
@@ -119,6 +108,22 @@ namespace impl {
 
         bool valid() const {
             return m_valid;
+        }
+    };
+
+    class Device_I2C {
+    protected:
+        TwoWire *wire;
+
+        explicit Device_I2C(TwoWire *wire) : wire(wire) {
+            static bool _x = begin_I2C();
+            static_cast<void>(_x);  // to suppress compiler warnings.
+        }
+
+        bool begin_I2C() {
+            wire->begin();
+            wire->setClock(400000UL);
+            return true;
         }
     };
 
@@ -183,7 +188,7 @@ namespace impl {
     };
 }
 
-class Sensors_Environmental : protected impl::Sensors_Global {
+class Sensors_Environmental : protected impl::Sensors_Global, protected impl::Device_I2C {
 private:
     static constexpr uint8_t pin_uv = A0;
     static constexpr uint8_t pin_33 = A1;
@@ -195,7 +200,8 @@ public:
     explicit
     Sensors_Environmental(Peripherals_t *sensors_list,
                           uint8_t bme280_addr = ADDR_BME280,
-                          uint8_t ccs811_addr = ADDR_CCS811) : Sensors_Global(sensors_list) {
+                          uint8_t ccs811_addr = ADDR_CCS811,
+                          TwoWire *wire = &Wire) : Sensors_Global(sensors_list), Device_I2C(wire) {
         bme_id = bme280_addr - ADDR_BME280;
         bme280 = new Adafruit_BME280();
         ccs811 = new Adafruit_CCS811();
@@ -328,7 +334,7 @@ public:
     }
 };
 
-class Sensors_IMU_BNO085 : public impl::Sensors_IMU {
+class Sensors_IMU_BNO085 : public impl::Sensors_IMU, protected impl::Device_I2C {
 private:
     Adafruit_BNO08x *bno085 = nullptr;
     sh2_SensorValue_t *sensor_value = nullptr;
@@ -339,7 +345,8 @@ private:
 public:
     explicit
     Sensors_IMU_BNO085(Peripherals_t *sensors_list,
-                       uint8_t bno085_addr = ADDR_BNO085) : Sensors_IMU(sensors_list) {
+                       uint8_t bno085_addr = ADDR_BNO085,
+                       TwoWire *wire = &Wire) : Sensors_IMU(sensors_list), Device_I2C(wire) {
         bno085 = new Adafruit_BNO08x();
         sensor_value = new sh2_SensorValue_t();
 
@@ -427,7 +434,7 @@ private:
     }
 };
 
-class Sensors_IMU_BNO055 : public impl::Sensors_IMU {
+class Sensors_IMU_BNO055 : public impl::Sensors_IMU, protected impl::Device_I2C {
 private:
     Adafruit_BNO055 *bno055 = nullptr;
     sensors_event_t orientation_data = {};
@@ -437,7 +444,8 @@ private:
 public:
     explicit
     Sensors_IMU_BNO055(Peripherals_t *sensors_list,
-                       uint8_t bno055_addr = ADDR_BNO055) : Sensors_IMU(sensors_list) {
+                       uint8_t bno055_addr = ADDR_BNO055,
+                       TwoWire *wire = &Wire) : Sensors_IMU(sensors_list), Device_I2C(wire) {
         bno055 = new Adafruit_BNO055(55, bno055_addr, wire);
         m_valid = list->imu_bno055 = bno055->begin();
     }
@@ -491,13 +499,14 @@ public:
     }
 };
 
-class Sensors_IMU_ICM20948 : public impl::Sensors_IMU {
+class Sensors_IMU_ICM20948 : public impl::Sensors_IMU, protected impl::Device_I2C {
 private:
     ICM_20948_I2C *icm20948 = nullptr;
 
 public:
     explicit
-    Sensors_IMU_ICM20948(Peripherals_t *sensors_list) : Sensors_IMU(sensors_list) {
+    Sensors_IMU_ICM20948(Peripherals_t *sensors_list,
+                         TwoWire *wire) : Sensors_IMU(sensors_list), Device_I2C(wire) {
         icm20948 = new ICM_20948_I2C();
         icm20948->begin(*wire, true);
         m_valid = list->imu_icm20948 = true;

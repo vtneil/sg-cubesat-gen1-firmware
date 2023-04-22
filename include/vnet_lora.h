@@ -90,6 +90,10 @@ namespace impl {
             *DDR_M1 |= (MASK_M1);      // Set M1 to OUTPUT mode
         }
 
+        virtual void begin_normal() {
+            begin_normal(m_baud);
+        }
+
         virtual void begin_normal(uint32_t baud) {
             this->m_baud = baud;
             *PORT_M0 &= ~((MASK_M0));  // Set M0 = 0
@@ -108,6 +112,16 @@ namespace impl {
 
             m_SerialLoRa->end();
             m_SerialLoRa->begin(baud_cfg, SERIAL_8N1);
+        }
+
+        virtual void end_cfg() {
+            *PORT_M0 &= (~MASK_M0);     // Set M0 = 0
+            *PORT_M1 &= (~MASK_M1);     // Set M1 = 0 (Normal Mode)
+
+            delay(100);
+
+            m_SerialLoRa->end();
+            m_SerialLoRa->begin(m_baud, SERIAL_8N1);
         }
 
         virtual void cmd_get_params() {

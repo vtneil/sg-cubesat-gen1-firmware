@@ -12,6 +12,7 @@
 #include "vnet_tools.h"
 
 /** Other Includes */
+#include "LiquidCrystal_I2C.h"
 #include "Adafruit_GFX.h"
 #include "Adafruit_SSD1306.h"
 #include "Fonts/TomThumb.h"
@@ -104,9 +105,8 @@ public:
 class USB_Device {
 };
 
-class Screen_OLED {
+class Screen_OLED : protected impl::Device_I2C {
 private:
-    TwoWire *wire = &Wire;
     uint8_t width;
     uint8_t height;
     bool status = false;
@@ -116,7 +116,7 @@ public:
 
 public:
     explicit
-    Screen_OLED(uint8_t w = 128, uint8_t h = 64) {
+    Screen_OLED(uint8_t w = 128, uint8_t h = 64, TwoWire *wire = &Wire) : Device_I2C(wire) {
         width = w;
         height = h;
         display = new Adafruit_SSD1306(width, height, wire, -1);
@@ -140,6 +140,55 @@ public:
         if (!status) return;
         display->clearDisplay();
         display->display();
+    }
+
+    bool valid() const {
+        return status;
+    }
+};
+
+class Screen_LCD : protected impl::Device_I2C {
+private:
+    uint8_t width;
+    uint8_t height;
+    uint8_t addr;
+    bool status = false;
+
+public:
+    LiquidCrystal_I2C *lcd = nullptr;
+
+public:
+    explicit Screen_LCD(uint8_t w = 20, uint8_t h = 4,
+                        uint8_t lcd_addr = 0x27,
+                        TwoWire *wire = &Wire,
+                        bool backlight = true) : Device_I2C(wire) {
+        width = w;
+        height = h;
+        addr = lcd_addr;
+        status = is_connected();
+
+        if (status) {
+            lcd = new LiquidCrystal_I2C(lcd_addr, w, h);
+            status = status || (lcd != nullptr);
+
+            lcd->init();
+            if (backlight)
+                lcd->backlight();
+            else
+                lcd->noBacklight();
+            lcd->clear();
+        }
+    }
+
+public:
+    bool is_connected() const {
+        wire->beginTransmission(addr);
+        return wire->endTransmission() == 0;
+    }
+
+    void clear() const {
+        if (!status) return;
+        lcd->clear();
     }
 
     bool valid() const {
