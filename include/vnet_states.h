@@ -1,5 +1,5 @@
-#ifndef PINTO_V1_FIRMWARE_VNET_STATES_H
-#define PINTO_V1_FIRMWARE_VNET_STATES_H
+#ifndef VNET_STATES_H
+#define VNET_STATES_H
 
 #include "vnet_definitions.h"
 
@@ -74,4 +74,4 @@ public:
                      State *next = nullptr) : State(func, id, prev, next) {}
 };
 
-#endif //PINTO_V1_FIRMWARE_VNET_STATES_H
+#endif //VNET_STATES_H

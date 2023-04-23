@@ -21,10 +21,11 @@
 #include "vnet_definitions.h"
 #include "vnet_tools.h"
 #include "vnet_states.h"
-#include "vnet_peripherals.h"
-#include "vnet_serializer.h"
 
 #define ONEWIRE_CUSTOM_PIN
+
+#include "vnet_peripherals.h"
+#include "vnet_serializer.h"
 
 /** Device Parameters */
 #define DEVICE_NUMBER 0
@@ -108,7 +109,7 @@ EEPROM_Config_t device_params = {
 /** Global Variables */
 Peripherals_t sensors_list = {};
 
-LoRa_E32 *lora;
+LoRa_E32<> *lora;
 Storage_SD *storage;
 Screen_OLED *oled;
 Screen_LCD *lcd;
@@ -184,15 +185,19 @@ void user_uart_rx() {
                 case State::MAIN_LOOP:
                     state = &main_state;
                     break;
-                case State::DFU_LOOP:
-                    state = &lora_cfg_state;
-                    break;
+
                 case State::SD_READ:
                     state = &sd_read_state;
                     break;
+
+                case State::DFU_LOOP:
+                    state = &lora_cfg_state;
+                    break;
+
                 case State::FORCE_RESET:
                     reset_device();
                     break;
+
                 default:
                     break;
             }
@@ -250,17 +255,17 @@ void main_loop_handler() {
 
         /** Log and Write Data */
 
-#if defined(SERIALIZE_PAYLOAD)
-        serializer.serialize(data);
-        LOG(Serial.write(serializer.buf(), sizeof(data)));
-        LOG(Serial.write(serializer.term, sizeof(serializer.term)));
-
-        SerialLoRa.write(serializer.buf(), sizeof(data));
-        SerialLoRa.write(serializer.term, sizeof(serializer.term));
-#else
+//#ifdef SERIALIZE_PAYLOAD
+//        serializer.serialize(data);
+//        LOG(Serial.write(serializer.buf(), sizeof(data)));
+//        LOG(Serial.write(serializer.term, sizeof(serializer.term)));
+//
+//        SerialLoRa.write(serializer.buf(), sizeof(data));
+//        SerialLoRa.write(serializer.term, sizeof(serializer.term));
+//#else
         LOG(Serial.println(packet));
         SerialLoRa.println(packet);
-#endif
+//#endif
 
         storage->file.println(packet);
         storage->flush();
@@ -311,9 +316,20 @@ void boot_handler() {
 }
 
 void lora_cfg_handler() {
+    lora->end();
+
     lora->begin_cfg();
 
-    lora->cmd_get_params();
+    Serial.println("==== LoRa Getting Configuration...  ====");
+
+    if (!lora->cmd_get_params()) {
+        Serial.println("Config cancelled. Returning to Normal Mode...");
+        lora->end();
+        delay(100);
+        lora->begin_normal();
+        state = &main_state;
+        return;
+    }
 
     Serial.println("==== LoRa Current Configuration  ====");
 
@@ -322,19 +338,25 @@ void lora_cfg_handler() {
     Serial.println("=== LoRa Begin Configuration Mode ===");
 
     lora->cmd_set_params(0,
-                         LoRa_E32::LORA_BAUD_115200,
-                         LoRa_E32::LORA_8N1,
-                         LoRa_E32::LORA_RATE_2400,
-                         LORA_CHANNEL, LoRa_E32::LORA_TX_MAX,
+                         LoRaCFG::LORA_BAUD_9600,
+                         LoRaCFG::LORA_8N1,
+                         LoRa_E32<>::LORA_RATE_2400,
+                         LORA_CHANNEL, LoRaCFG::LORA_TX_MAX,
                          true, true);
 
     lora->cmd_write_params();
 
     lora->print_params();
 
+    lora->end_cfg();
+
     Serial.println("==== LoRa End Configuration Mode ====");
 
-    sig_trap();
+    delay(100);
+
+    lora->begin_normal();
+
+    state = &main_state;
 }
 
 /** End Handler Functions Definitions */
@@ -348,7 +370,7 @@ void init_peripherals() {
     /** End Pins */
 
     /** Begin LoRa */
-    lora = new LoRa_E32(&SerialLoRa, 115200U, &DDRH, &DDRH, &PORTH, &PORTH, (1 << PH2), (1 << PH3));
+    lora = new LoRa_E32<>(&SerialLoRa, 9600U, &DDRH, &DDRH, &PORTH, &PORTH, (1 << PH2), (1 << PH3));
     /** End LoRa */
 
     /** Begin SD */
@@ -364,7 +386,12 @@ void init_peripherals() {
     /** End Sensors */
 
     /** Begin Interface */
-    lora->begin_normal(115200U);
+#ifdef DEVICE_SETUP_MODE
+    lora->begin_cfg();
+    lora_cfg_handler();
+#else
+    lora->begin_normal();
+#endif
     /** End Interface */
 
 #if defined(ENABLE_HW_RESET)
@@ -428,20 +455,20 @@ void display_OLED() {
     oled->display->println("Battery: " + String(data.battery_v) + " V");
     oled->display->println("------------------------------");
     oled->display->println("Pos 0: " + build_string(String(data.pos0.latitude, 6),
-                                                      String(data.pos0.longitude, 6),
-                                                      data.pos0.altitude));
+                                                    String(data.pos0.longitude, 6),
+                                                    data.pos0.altitude));
     oled->display->println("Pos 1: " + build_string(String(data.pos1.latitude, 6),
-                                                      String(data.pos1.longitude, 6),
-                                                      data.pos1.altitude));
+                                                    String(data.pos1.longitude, 6),
+                                                    data.pos1.altitude));
     oled->display->println("------------------------------");
     oled->display->println("PHT+A 0: " + build_string(data.pht.pressure,
-                                                        data.pht.humidity,
-                                                        data.pht.temperature,
-                                                        data.pht.altitude));
+                                                      data.pht.humidity,
+                                                      data.pht.temperature,
+                                                      data.pht.altitude));
     oled->display->println("PHT+A 1: " + build_string(data.pht_ext.pressure,
-                                                        data.pht_ext.humidity,
-                                                        data.pht_ext.temperature,
-                                                        data.pht_ext.altitude));
+                                                      data.pht_ext.humidity,
+                                                      data.pht_ext.temperature,
+                                                      data.pht_ext.altitude));
     oled->display->println("------------------------------");
     oled->display->println("Ext Temp Probe: " + String(data.ext_temperature));
     oled->display->display();
