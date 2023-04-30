@@ -286,6 +286,7 @@ public:
         m_valid = list->gps_SparkFun = gps_SparkFun->begin();
         if (list->gps_SparkFun) {
             gps_SparkFun->setI2COutput(COM_TYPE_UBX);
+            gps_SparkFun->setDynamicModel(DYN_MODEL_AIRBORNE2g);
             gps_SparkFun->saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
         }
     }

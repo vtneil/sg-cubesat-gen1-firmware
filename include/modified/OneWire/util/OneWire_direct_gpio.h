@@ -5,7 +5,7 @@
 // meant to be private, used within OneWire.cpp, but not exposed to Arduino
 // sketches or other libraries which may include OneWire.h.
 
-#include "../../../../../../../.platformio/packages/toolchain-atmelavr/lib/gcc/avr/7.3.0/include/stdint.h"
+#include "stdint.h"
 
 // Platform specific I/O definitions
 

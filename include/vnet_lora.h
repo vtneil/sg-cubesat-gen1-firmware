@@ -133,24 +133,22 @@ namespace impl {
         }
 
         virtual bool cmd_get_params() {
-            write_triple(0xc1);
-
-            while (!m_SerialLoRa->available()) {
-                if (Serial.available()) { delay(100); Serial.flush(); return false; }
-            }
+            String msg = "";
+            do {
+                write_triple(0xc1);
+                delay(500);
+            } while (!m_SerialLoRa->available());
 
             delay(100);
 
             uint8_t i = 0;
             while (m_SerialLoRa->available()) {
                 config[i] = m_SerialLoRa->read();
-                Serial.print(config[i], 2);
-                Serial.print(" ");
+                msg += String(config[i], 2);
                 ++i;
             }
-            Serial.println();
 
-            return true;
+            return msg;
         }
 
         virtual void cmd_write_params() {

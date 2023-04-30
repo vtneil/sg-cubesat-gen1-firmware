@@ -177,6 +177,7 @@ public:
             else
                 lcd->noBacklight();
             lcd->clear();
+            lcd->println("Hello");
         }
     }
 

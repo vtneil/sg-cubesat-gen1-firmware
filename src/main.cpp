@@ -28,9 +28,11 @@
 #include "vnet_serializer.h"
 
 /** Device Parameters */
-#define DEVICE_NUMBER 0
-#define LORA_CHANNEL 0
+#define DEVICE_NUMBER (-1)
+#define LORA_CHANNEL (30 + DEVICE_NUMBER)
 #define FILENAME ""
+
+static_assert(DEVICE_NUMBER > -1, "Parameter DEVICE_NUMBER is invalid, use valid values (0 - 33)");
 
 /** Programming Options */
 //#define DEVICE_SETUP_MODE
@@ -61,6 +63,11 @@
 #else
 #define LOG(CMD)
 #endif
+
+/** Device Configurations and Parameters */
+EEPROM_Config_t device_params = {
+        .loop_interval = MILLIS_2S
+};
 
 /** Typedefs */
 typedef struct {
@@ -100,11 +107,6 @@ extern void display_LCD();
 extern inline void sig_trap();
 
 extern inline void reset_device();
-
-/** Device Configurations and Parameters */
-EEPROM_Config_t device_params = {
-        .loop_interval = MILLIS_1S
-};
 
 /** Global Variables */
 Peripherals_t sensors_list = {};
@@ -342,7 +344,7 @@ void lora_cfg_handler() {
                          LoRaCFG::LORA_8N1,
                          LoRa_E32<>::LORA_RATE_2400,
                          LORA_CHANNEL, LoRaCFG::LORA_TX_MAX,
-                         true, true);
+                         false, true);
 
     lora->cmd_write_params();
 
@@ -422,6 +424,7 @@ void sd_read() {
         LOG(Serial.println("Delete All Mode"));
         storage->delete_all();
         storage->close();
+        LOG(Serial.println("Delete Done."));
         return;
     } else {
         LOG(Serial.println("Listing Directory..."));
@@ -475,7 +478,21 @@ void display_OLED() {
 }
 
 void display_LCD() {
+    if (!lcd->valid()) return;
 
+    lcd->clear();
+
+    lcd->lcd->setCursor(0, 0);
+    lcd->lcd->print(build_string("DEV: ", DEVICE_NUMBER, " CH: ", LORA_CHANNEL));
+
+    lcd->lcd->setCursor(0, 1);
+    lcd->lcd->print(build_string(data.pos0.latitude, data.pos0.longitude, data.pos0.altitude));
+
+    lcd->lcd->setCursor(0, 2);
+    lcd->lcd->print(build_string(data.pos1.latitude, data.pos1.longitude, data.pos1.altitude));
+
+    lcd->lcd->setCursor(0, 3);
+    lcd->lcd->print(build_string(data.pht.temperature, data.pht_ext.temperature, data.ext_temperature));
 }
 
 void timer_increment() {
@@ -528,7 +545,10 @@ ISR(TIMER1_COMPA_vect) {
 
 void sig_trap() {
     delay(20);
-    while (true);
+    uint8_t b;
+    while (true) {
+        static_cast<void>(b);
+    }
 }
 
 void reset_device() {
