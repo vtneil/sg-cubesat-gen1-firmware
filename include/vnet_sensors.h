@@ -299,6 +299,7 @@ public:
                     ((double) gps_SparkFun->getAltitude(250)) * 1E-3
             };
             last_millis = millis();
+//            gps_SparkFun->getSIV();
         }
         return *pos;
     }

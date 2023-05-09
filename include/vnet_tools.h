@@ -21,11 +21,22 @@ String build_string(T last) {
  * @param args Values
  * @return built Arduino String
  */
-template<typename T, typename... Args>
-String build_string(T first, Args... args) {
+template<typename T, typename... Ts>
+String build_string(T first, Ts... args) {
     String s0 = "";
-    s0 += String(first) + "," + build_string(args...);
+    s0 += String(first) + "," + build_string<Ts...>(args...);
     return s0;
+}
+
+template<typename S = HardwareSerial, S *stream = &Serial, typename T>
+void write_stream(T last) {
+    stream->write(last);
+}
+
+template<typename S = HardwareSerial, S *stream = &Serial, typename T, typename... Ts>
+void write_stream(T first, Ts... args) {
+    stream->write(first);
+    write_stream<S, stream, Ts...>(args...);
 }
 
 #ifdef __arm__

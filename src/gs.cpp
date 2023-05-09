@@ -67,6 +67,7 @@ void loop() {
         delay(10);
         lora.begin_cfg();
         lora.cmd_get_params();
+        lora.print_params();
 
         uint8_t ch = 0;
         while (Serial.available()) {
